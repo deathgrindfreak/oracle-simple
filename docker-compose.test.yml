@@ -1,0 +1,27 @@
+version: "3"
+services:
+  dev-db:
+    container_name: dev-db
+    image: gvenzl/oracle-free:23-slim-faststart
+    environment:
+      ORACLE_DATABASE: devdb
+      ORACLE_PASSWORD: password
+      APP_USER: username
+      APP_USER_PASSWORD: password
+    ports:
+      - 1521:1521
+    networks:
+      - test-oracle-simple
+
+  functional-tests:
+    stdin_open: true
+    tty: true
+    image: functional-tests:latest
+    environment:
+      LD_LIBRARY_PATH: "/opt/oracle/instantclient_23_4"
+    networks:
+      - test-oracle-simple
+    command: /functional-tests
+
+networks:
+  test-oracle-simple:

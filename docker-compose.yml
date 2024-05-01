@@ -1,14 +1,33 @@
 version: "3"
 services:
-  dev-db:
-    container_name: dev-db
-    image: gvenzl/oracle-free:23-slim-faststart
+  oracle-simple-dev:
+    stdin_open: true
+    tty: true
+    image: registry.gitlab.com/heb-engineering/teams/enterprise/sco/spur/supplier-buildpack/oracle:c6b2594fe2a2e47477c252189dff3c4df7b3c7d4
+    working_dir: $PROJECT_DIR
     volumes:
-      - ./db:/container-entrypoint-startdb.d
-    environment:
-      ORACLE_DATABASE: devdb
-      ORACLE_PASSWORD: password
-      APP_USER: username
-      APP_USER_PASSWORD: password
-    ports:
-      - 1521:1521
+      #Mount application code
+      - .:/$PROJECT_DIR
+      #Mount docker socket so that docker can be used on image
+      - $DOCKER_SOCKET_PATH:/var/run/docker.sock
+      - stack:/root/.stack
+      - stack-work:/$PROJECT_DIR/.stack-work
+
+  gke-tools:
+    stdin_open: true
+    tty: true
+    image: registry.gitlab.com/heb-engineering/teams/enterprise/sco/spur/supplier-buildpack/spur-gke-tools/helm3:be04d1ce06dc6b655c18e9b2dbbcc3227e440101
+    working_dir: $PROJECT_DIR
+    volumes:
+      #Mount application code
+      - .:/$PROJECT_DIR
+      #Mount docker socket so that docker can be used on image
+      - $DOCKER_SOCKET_PATH:/var/run/docker.sock
+      - stack:/root/.stack
+      - stack-work:/$PROJECT_DIR/.stack-work
+
+volumes:
+  stack:
+    name: stack
+    external: true
+  stack-work:

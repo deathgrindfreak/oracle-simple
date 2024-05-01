@@ -24,6 +24,7 @@ import Test.Hspec (Spec, around, describe, hspec, it, shouldBe)
 import Test.Hspec.Hedgehog (hedgehog)
 
 import Database.Oracle.Simple
+import WaitForOracle (waitForOracle)
 
 data SumType = This | That
   deriving (Generics.Generic, Eq, Show)
@@ -50,10 +51,12 @@ data MixTable = MixTable
   deriving anyclass (FromRow, ToRow)
 
 main :: IO ()
-main = withPool params $ hspec . spec
+main = do
+  waitForOracle params (2 * 60) 5
+  withPool params $ hspec . spec
 
 params :: ConnectionParams
-params = ConnectionParams "username" "password" "localhost:1521/devdb" Nothing
+params = ConnectionParams "username" "password" "dev-db:1521/devdb" Nothing
 
 genDPITimestamp :: HH.Gen DPITimestamp
 genDPITimestamp = do

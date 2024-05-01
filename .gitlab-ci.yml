@@ -1,0 +1,87 @@
+stages:
+  - build
+  - create_images
+  - run_functional_tests
+
+## This stanza specifies that the job should run in the following conditions:
+## - If on a branch that is not the default branch and any of the listed files have changed,
+##    run the job only when no jobs in earlier stages fail or have allow_failure: true.
+## - If the current branch is the default branch, run the job only when no jobs in earlier stages fail or have allow_failure: true.
+.only-on: &only-on
+  rules:
+    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+      changes:
+        - ".modulint/*.dhall"
+        - "**/*.hs"
+        - "containers/**/*"
+        - "test/**/*"
+        - "scripts/**/*"
+        - ".gitlab-ci.yml"
+        - ".hlint.yml"
+        - "fourmolu.yaml"
+        - "*.yml"
+        - "*.yaml"
+        - "*.dhall"
+      when: on_success
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: on_success
+
+default:
+  image: registry.gitlab.com/heb-engineering/teams/enterprise/sco/spur/supplier-buildpack/spur-gke-tools/helm3:be04d1ce06dc6b655c18e9b2dbbcc3227e440101
+  tags:
+    - gcp_small
+
+Build Executables:
+  image: registry.gitlab.com/heb-engineering/teams/enterprise/sco/spur/supplier-buildpack/oracle:c6b2594fe2a2e47477c252189dff3c4df7b3c7d4
+  stage: build
+  interruptible: true
+  variables:
+    CACHE_FALLBACK_KEY: stack-v1-a20d392fec606e23e1befe438064f0e36de120a3
+  cache:
+    key:
+      files:
+        - stack.yaml
+        - package.yaml
+      prefix: stack-v1
+    paths:
+      - .stack/
+  tags:
+    - gcp_large
+  artifacts:
+    paths:
+      - .stack-work/dist/functional-tests
+    expire_in: 4 hours
+  script:
+    - ./scripts/in-build-container/build.sh
+    - ./scripts/format-check-ci.sh
+
+Create Test Image:
+  before_script:
+    - echo $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+  stage: create_images
+  tags:
+    - gcp_small
+  needs:
+    - "Build Executables"
+  artifacts:
+    paths:
+      - functional-tests.tar.gz
+    expire_in: 1 hour
+  script:
+    - ./scripts/in-build-container/build-test-image.sh functional-tests ${CI_COMMIT_SHA} "${CI_REGISTRY_IMAGE}"
+    - docker save functional-tests:${CI_COMMIT_SHA} | gzip > functional-tests.tar.gz
+  <<: *only-on
+
+Functional Tests:
+  stage: run_functional_tests
+  interruptible: true
+  tags:
+    - gcp_large
+  needs:
+    - "Create Test Image"
+  script:
+    - docker ps # print what is running so we can see if something fishy is going on
+    - docker load -i functional-tests.tar.gz
+    - docker tag functional-tests:${CI_COMMIT_SHA} functional-tests:latest
+    - ./scripts/run_tests.sh
+  <<: *only-on

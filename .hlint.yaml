@@ -1,0 +1,98 @@
+# This file contains a template configuration file, which is typically
+# placed as .hlint.yaml in the root of your project
+
+
+# Specify additional command line arguments
+#
+- arguments: [--color=auto, -j]
+
+
+# Control which extensions/flags/modules/functions can be used
+#
+# - extensions:
+#   - default: false # all extension are banned by default
+#   - name: [PatternGuards, ViewPatterns] # only these listed extensions can be used
+#   - {name: CPP, within: CrossPlatform} # CPP can only be used in a given module
+#
+# - flags:
+#   - {name: -w, within: []} # -w is allowed nowhere
+#
+# - modules:
+#   the following two lines are here as syntax suggestions
+#   - {name: [Data.Set, Data.HashSet], as: Set} # if you import Data.Set qualified, it must be as 'Set'
+#   - {name: Control.Arrow, within: []} # Certain modules are banned entirely
+#
+- functions:
+    - {name: unsafePerformIO, within: []} # unsafePerformIO can only appear in no modules
+    - {name: undefined, within: []} # undefined can only appear in no modules
+# Disallow the "unsafe" list functions from prelude - we should be able to pattern match
+# instead of using these, forcing us to deal with empty list/nothing cases instead of runtime erros
+    - {name: head, within : []}
+    - {name: tail, within: []}
+    - {name: init, within: []}
+    - {name: last, within: []}
+    - {name: fromJust, within: []}
+
+#  Warnings we'd like to ignore
+# unfortunately Redundant $ includes enforcing . . . $, which we want to ignore
+- ignore: {name: "Redundant $"}
+- ignore: {name: "Use unwords"}
+- ignore: {name: "Redundant as"}
+- ignore: {name: "Avoid lambda"}
+- ignore: {name: "Use camelCase"}
+- ignore: {name: "Redundant flip"}
+- ignore: {name: "Use fromMaybe"}
+- ignore: {name: "Use unless"}
+- ignore: {name: "Use isNothing"}
+- ignore: {name: "Use maybe"}
+- ignore: {name: "Use ?~"}
+- ignore: {name: "Replace case with maybe"}
+- ignore: {name: "Use list comprehension"}
+- ignore: {name: "Fuse foldMap/map"}
+- ignore: {name: "Use Just"}
+- ignore: {name: "Use lambda"}
+- ignore: {name: "Hoist not"}
+- ignore: {name: "Use (,)"}
+
+# return is redundant and can hide something from being promoted above a Monad, use pure instead.
+- error: {lhs: "return", rhs: pure}
+
+# Give an error on usages of foldl, use foldl' instead
+- error: {lhs: "foldl", rhs: "foldl'"}
+
+# Turn on hints that are off by default
+
+# Ban "module X(module X) where", to require a real export list
+- error: {name: Use explicit module export list}
+
+# Replace a $ b $ c with a . b $ c
+- group: {name: dollar, enabled: true}
+
+# Generalise map to fmap, ++ to <>
+- group: {name: generalise, enabled: false}
+
+#infix means keeping in your head the relative fixity of each operatio.  Using prefix does not.
+- ignore: {name: Use infix}
+
+#just use fmap, also ugh infix
+- ignore: {name: Use <$>}
+
+# rarely do bind & friends make code easier to read, especially for those new to the language.
+- ignore: {name: "Use =<<"}
+
+# Eta-reducing does not necessarily improve code clarity
+- ignore: {name: "Eta reduce"}
+
+# Use section doesn't help readability either
+- ignore: {name: "Use section"}
+
+# Use section doesn't help readability either
+- ignore: {name: "Use tuple-section"}
+- ignore: {name: "Use lambda-case"}
+
+# Ignore duplication warnings. Particularly caused by XML parsing
+- ignore: {name: "Reduce duplication"}
+
+# Ignore suggestions to avoid lambdas by using partially applied infix
+# notation
+- ignore: {name: "Avoid lambda using `infix`"}

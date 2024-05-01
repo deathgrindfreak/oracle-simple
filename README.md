@@ -1,6 +1,5 @@
 oracle-simple
 =====================================
-![](https://github.com/haskell-oracle/oracle-simple/actions/workflows/main.yml/badge.svg)
 
 Modern bindings to Oracle [odpic](https://oracle.github.io/odpi/) C library.
  - See [here](https://github.com/oracle/odpi/blob/main/include/dpi.h) for a list of all structs and functions used in this library.
@@ -60,50 +59,51 @@ data ReturnedRow = ReturnedRow
 
 ## Developing locally
 
-### Using nix
+### Building
 
-#### Building
+Run `./scripts/bootstrap.sh` which will:
+* Configure the local `.env` file
+* Bring up some docker volumes needed to hold stack data
 
+The build script will build the project without running the tests themselves
 ```bash
-$ nix-build
+./scripts/build
 ```
 
-```bash
-$ nix-shell --run 'cabal build'
-```
+### Running tests
 
-#### Running tests
-
-```bash
-$ docker-compose up -d
-$ nix-build && ./result/bin/example
-```
-
-### Using stack
-
-#### Building
-
-First install `odpi` (e.g. on MacOS):
+You can run the functional tests with this script
 ``` bash
-brew install odpi
+./scripts/run_tests.sh
 ```
 
-This should suffice to permit you to build:
-```bash
-$ stack build
-```
+##### Running tests in Mac OSX (Apple Silicon Chips)
 
-#### Running tests
+In order to run the tests on a newer Mac machine, you'll have to use [Colima](https://github.com/abiosoft/colima)
 
-You'll need a runtime dependency: goto https://www.oracle.com/database/technologies/instant-client/macos-intel-x86-downloads.html#ic_osx_inst and follow the instant client installation instructions.
+To install via Homebrew, run
 
-Then link a dynamic lib from the instant client to a location on your host where it can be found:
-```
-ln -s ~/Downloads/instantclient_19_8/libclntsh.dylib /usr/local/lib/
-```
-
-Run docker-compose up and tests as so:
 ``` bash
-docker-compose up -d
-stack run tests
+brew install colima
+```
+
+These are the settings I typically use:
+
+``` bash
+colima start \
+  --arch x86_64 \
+  --vm-type=vz \
+  --vz-rosetta \
+  --mount-type virtiofs \
+  --memory 24 \
+  --cpu 8
+```
+
+If your machine doesn't support Rosetta, this might work instead:
+
+``` bash
+colima start \
+  --arch x86_64 \
+  --memory 24 \
+  --cpu 8
 ```

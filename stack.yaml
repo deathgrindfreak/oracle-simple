@@ -1,5 +1,18 @@
-resolver:
-  url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/21/12.yaml
+resolver: lts-21.23
+
+install-ghc: false
+system-ghc: true
+
+flags:
+  oracle-simple:
+    strict: true
 
 packages:
 - .
+
+extra-deps:
+- git: https://github.com/flipstone/henforcer
+  commit: 468c20ffd9906aad801e56d950f28d3158f5da4d
+
+ghc-options:
+  "$locals": -fwrite-ide-info -XHaskell2010

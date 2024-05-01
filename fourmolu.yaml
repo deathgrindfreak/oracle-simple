@@ -1,8 +1,12 @@
+---
 indentation: 2
-column-limit: 120
-function-arrows: 'leading'
-comma-style: 'leading'
-import-export-style: 'leading'
-haddock-style: 'single-line'
-let-style: 'inline'
-single-constraint-parens: 'auto'
+comma-style: leading
+record-brace-space: true
+indent-wheres: true
+diff-friendly-import-export: false
+respectful: true
+haddock-style: multi-line
+newlines-between-decls: 1
+import-export-style: trailing
+single-constraint-parens: auto
+

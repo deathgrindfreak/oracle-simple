@@ -1,0 +1,117 @@
+name:                oracle-simple
+version:             0.1.0.0
+synopsis:            Easy access to Oracle
+description:         Query Oracle databases using odpic
+extra-source-files:
+  - CHANGELOG.md
+
+flags:
+  strict:
+    description: Turn on strict ghc options
+    manual: true
+    default: false
+
+  default_paths:
+    description: use default paths for odpic as set via `make install` from source
+    manual: true
+    default: true
+
+  apt_paths:
+    description: use paths for odpic as set by libodpic4 and odpic-dev from apt
+    manual: true
+    default: false
+
+when:
+  - condition: flag(strict)
+    then:
+      ghc-options:
+        - -Wall
+        - -Werror
+        - -Wcompat
+        - -Widentities
+        - -Wincomplete-uni-patterns
+        - -Wincomplete-record-updates
+        - -Wmissing-export-lists
+        - -Wno-implicit-prelude
+        - -Wno-safe
+        - -Wno-unsafe
+        - -Wnoncanonical-monad-instances
+        - -Wredundant-constraints
+        - -Wpartial-fields
+        - -Wmissed-specialisations
+        - -Wunused-packages
+        - -O2
+        - -haddock
+        - -fplugin Henforcer
+      dependencies:
+        henforcer
+    else:
+      ghc-options:
+        - -O2
+        - -haddock
+
+library:
+  source-dirs: src
+  exposed-modules:
+    - Database.Oracle.Simple
+  dependencies:
+    - base
+    - bytestring
+    - derive-storable
+    - text
+    - mtl
+    - time
+    - aeson
+    - scientific
+    - vector
+    - uuid
+    - random
+  extra-libraries: odpic
+  when:
+    - condition: os(linux) && flag(default_paths)
+      include-dirs: /usr/local/include
+      extra-lib-dirs: /usr/local/lib
+    - condition: os(linux) && flag(apt_paths)
+      include-dirs: /usr/include
+      extra-lib-dirs: /usr/lib/x86_64-linux-gnu
+    - condition: os(osx) && flag(default_paths)
+      include-dirs: /usr/local/include
+      extra-lib-dirs: /usr/local/lib
+  c-sources:
+    - cbits/dpiDataBuffer.c
+    - cbits/oracleHelpers.c
+
+executables:
+  functional-tests:
+    source-dirs: test
+    main: Main.hs
+    ghc-options:
+      - -Wall
+      - -Werror
+      - -Wcompat
+      - -Widentities
+      - -Wincomplete-uni-patterns
+      - -Wincomplete-record-updates
+      - -Wmissing-export-lists
+      - -Wno-implicit-prelude
+      - -Wno-safe
+      - -Wno-unsafe
+      - -Wnoncanonical-monad-instances
+      - -Wredundant-constraints
+      - -Wpartial-fields
+      - -Wmissed-specialisations
+      - -Wunused-packages
+      - -O2
+      - -threaded
+      - -rtsopts
+      - -with-rtsopts=-N
+    dependencies:
+      - base
+      - clock
+      - exceptions
+      - oracle-simple
+      - time
+      - hspec
+      - hedgehog
+      - hspec-hedgehog
+      - aeson
