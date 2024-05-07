@@ -51,6 +51,39 @@ runWait :: ConnectionParams -> WaitM a -> IO a
 runWait dbParams waitM =
   withPool dbParams $ runReaderT (runWaitM waitM) . newOracleEnv
 
+import Database.Oracle.Simple
+  ( ConnectionParams,
+    HasOracleContext (..),
+    MonadOracle,
+    MonadOracleControl,
+    OracleEnv,
+    OracleError,
+    newOracleEnv,
+    ping,
+    withPool,
+  )
+
+newtype WaitM a = WaitM {runWaitM :: ReaderT OracleEnv IO a}
+  deriving
+    ( Functor
+    , Applicative
+    , Monad
+    , MonadIO
+    , MonadOracle
+    , MonadOracleControl
+    , MonadThrow
+    , MonadCatch
+    , MonadFail
+    )
+
+instance HasOracleContext WaitM where
+  getOracleEnv = WaitM ask
+  localOracleEnv f = WaitM . local f . runWaitM
+
+runWait :: ConnectionParams -> WaitM a -> IO a
+runWait dbParams waitM =
+  withPool dbParams $ runReaderT (runWaitM waitM) . newOracleEnv
+
 waitForOracle :: ConnectionParams -> Int -> Int -> IO ()
 waitForOracle dbParams timeoutSeconds sleepSeconds = do
   putStrLn $ "wait-for-oracle: Waiting " <> show timeoutSeconds <> "s for Oracle DB to start ..."
