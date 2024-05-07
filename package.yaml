@@ -66,6 +66,9 @@ library:
     - vector
     - uuid
     - random
+    - transformers
+    - safe-exceptions
+    - unliftio
   extra-libraries: odpic
   when:
     - condition: os(linux) && flag(default_paths)
@@ -108,10 +111,12 @@ executables:
     dependencies:
       - base
       - clock
-      - exceptions
+      - safe-exceptions
       - oracle-simple
       - time
       - hspec
       - hedgehog
       - hspec-hedgehog
+      - transformers
       - aeson
+      - unliftio

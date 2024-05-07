@@ -14,3 +14,6 @@ TAGS
 
 # Files copied into containers
 containers/oracle-buildpack/functional-tests
+
+# Scratch pad file
+Scratch.hs

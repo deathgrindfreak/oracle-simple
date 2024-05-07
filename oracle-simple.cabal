@@ -38,6 +38,7 @@ library
       Database.Oracle.Simple.FromRow
       Database.Oracle.Simple.Internal
       Database.Oracle.Simple.JSON
+      Database.Oracle.Simple.Monad
       Database.Oracle.Simple.Pool
       Database.Oracle.Simple.Query
       Database.Oracle.Simple.ToField
@@ -58,9 +59,12 @@ library
     , derive-storable
     , mtl
     , random
+    , safe-exceptions
     , scientific
     , text
     , time
+    , transformers
+    , unliftio
     , uuid
     , vector
   default-language: Haskell2010
@@ -98,12 +102,14 @@ executable functional-tests
       aeson
     , base
     , clock
-    , exceptions
     , hedgehog
     , hspec
     , hspec-hedgehog
     , oracle-simple
+    , safe-exceptions
     , time
+    , transformers
+    , unliftio
   default-language: Haskell2010
   if flag(strict)
     ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-uni-patterns -Wincomplete-record-updates -Wmissing-export-lists -Wno-implicit-prelude -Wno-safe -Wno-unsafe -Wnoncanonical-monad-instances -Wredundant-constraints -Wpartial-fields -Wmissed-specialisations -Wunused-packages -O2 -haddock -fplugin Henforcer

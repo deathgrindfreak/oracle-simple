@@ -32,6 +32,7 @@ default:
     - gcp_small
 
 Build Executables:
+  <<: *only-on
   image: registry.gitlab.com/heb-engineering/teams/enterprise/sco/spur/supplier-buildpack/oracle:c6b2594fe2a2e47477c252189dff3c4df7b3c7d4
   stage: build
   interruptible: true

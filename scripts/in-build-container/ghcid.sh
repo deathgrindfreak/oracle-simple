@@ -5,5 +5,4 @@ if [ "$(stack exec which ghcid)" = "" ]; then
 fi;
 
 stack exec ghcid -- \
-  --command="stack ghci --ghc-options='-j -fno-write-ide-info' oracle-simple:lib oracle-simple:test:spec" \
-  --test="Main.main"
+  --command="stack ghci --ghc-options='-j -fno-write-ide-info' oracle-simple:lib oracle-simple:exe:functional-tests"

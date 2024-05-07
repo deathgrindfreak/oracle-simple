@@ -7,16 +7,14 @@
 {-# LANGUAGE ViewPatterns #-}
 
 module Database.Oracle.Simple.Transaction
-  ( beginTransaction,
-    commitTransaction,
-    prepareCommit,
-    withTransaction,
-    commitIfNeeded,
+  ( withTransaction,
     withSavepoint,
-  ) where
+  )
+where
 
-import Control.Exception (catch, throw)
+import Control.Exception.Safe (catch, throw)
 import Control.Monad (replicateM, void, when, (<=<))
+import qualified Control.Monad.IO.Class as MIO
 import Data.UUID (UUID, toString)
 import Data.UUID.V4 (nextRandom)
 import Foreign (alloca, peek, poke, withForeignPtr)
@@ -34,6 +32,12 @@ import Database.Oracle.Simple.Internal
     OracleError,
     throwOracleError,
   )
+import Database.Oracle.Simple.Monad
+  ( MonadOracle,
+    TransactionState (..),
+    withNewTransactionState,
+    withOracleConnection,
+  )
 
 -- * Transactions
 
@@ -44,14 +48,22 @@ If the action throws any kind of exception, the transaction is rolled back and t
 
 Nesting transactions may result in undefined behavior. For /nesting-like/ functionality, use 'withSavepoint'.
 -}
-withTransaction :: Connection -> IO a -> IO a
-withTransaction conn action = do
-  txHandle <- beginTransaction conn
-  result <-
-    action
-      `catch` (\(e :: OracleError) -> rollbackTransaction conn txHandle >> throw e)
-  commitIfNeeded conn txHandle
-  pure result
+withTransaction :: MonadOracle m => m a -> m a
+withTransaction action =
+  withOracleConnection $ \conn ->
+    withNewTransactionState $ \newTransactionState -> do
+      case newTransactionState of
+        SavepointTransaction _ -> withSavepoint action
+        OutermostTransaction -> do
+          txHandle <- MIO.liftIO $ beginTransaction conn
+          result <-
+            action
+              `catch` ( \(e :: OracleError) -> do
+                          MIO.liftIO $ rollbackTransaction conn txHandle
+                          throw e
+                      )
+          MIO.liftIO $ commitIfNeeded conn txHandle
+          pure result
 
 -- ** Low-level transaction interface
 
@@ -120,7 +132,8 @@ foreign import ccall unsafe "dpiConn_tpcCommit"
 rollbackTransaction :: Connection -> Transaction -> IO ()
 rollbackTransaction (Connection fptr) dpiTransaction =
   withForeignPtr fptr $ \conn ->
-    withDPIXid dpiTransaction $ throwOracleError <=< dpiConn_tpcRollback conn
+    withDPIXid dpiTransaction $
+      throwOracleError <=< dpiConn_tpcRollback conn
 
 foreign import ccall unsafe "dpiConn_tpcRollback"
   dpiConn_tpcRollback ::
@@ -157,11 +170,14 @@ withDPIXid Transaction {..} action =
 
 Savepoints may be nested.
 -}
-withSavepoint :: Connection -> IO a -> IO a
-withSavepoint conn action = do
-  savepoint <- newSavepoint conn
+withSavepoint :: MonadOracle m => m a -> m a
+withSavepoint action = do
+  savepoint <- newSavepoint
   action
-    `catch` (\(e :: OracleError) -> rollbackToSavepoint conn savepoint >> throw e)
+    `catch` ( \(e :: OracleError) -> do
+                rollbackToSavepoint savepoint
+                throw e
+            )
 
 -- ** Low-level savepoint interface
 
@@ -169,14 +185,16 @@ newtype Savepoint = Savepoint String
   deriving newtype (Show)
 
 -- | Create a new savepoint. This should only be used within a transaction.
-newSavepoint :: Connection -> IO Savepoint
-newSavepoint conn = do
-  name <- genSavepointName
-  _ <- execute_ conn ("savepoint " <> name)
+newSavepoint :: MonadOracle m => m Savepoint
+newSavepoint = do
+  let
+    genSavepointName =
+      replicateM 8 (getStdRandom $ uniformR ('a', 'z'))
+  name <- MIO.liftIO $ genSavepointName
+  _ <- execute_ ("savepoint " <> name)
   pure $ Savepoint name
-  where
-    genSavepointName = replicateM 8 (getStdRandom $ uniformR ('a', 'z'))
 
 -- | Roll back to a savepoint.
-rollbackToSavepoint :: Connection -> Savepoint -> IO ()
-rollbackToSavepoint conn (Savepoint name) = void $ execute_ conn ("rollback to savepoint " <> name)
+rollbackToSavepoint :: MonadOracle m => Savepoint -> m ()
+rollbackToSavepoint (Savepoint name) =
+  void $ execute_ ("rollback to savepoint " <> name)
