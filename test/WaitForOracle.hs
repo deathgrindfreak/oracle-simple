@@ -55,7 +55,6 @@ import Database.Oracle.Simple
   ( ConnectionParams,
     HasOracleContext (..),
     MonadOracle,
-    MonadOracleControl,
     OracleEnv,
     OracleError,
     newOracleEnv,
@@ -70,10 +69,10 @@ newtype WaitM a = WaitM {runWaitM :: ReaderT OracleEnv IO a}
     , Monad
     , MonadIO
     , MonadOracle
-    , MonadOracleControl
     , MonadThrow
     , MonadCatch
     , MonadFail
+    , MonadUnliftIO
     )
 
 instance HasOracleContext WaitM where
