@@ -8,6 +8,8 @@ module Database.Oracle.Simple.Monad
   ( OracleEnv,
     newOracleEnv,
     withOracleConnection,
+    withLockedOracleConnection,
+    withPoolConnection,
     MonadOracle,
     HasOracleContext (..),
     TransactionState (..),
@@ -20,6 +22,7 @@ module Database.Oracle.Simple.Monad
   )
 where
 
+import Control.Concurrent.MVar (MVar)
 import Control.Exception.Safe (Exception, MonadCatch, MonadThrow)
 import qualified Control.Monad.IO.Class as MIO
 import Control.Monad.Reader (ReaderT (..), mapReaderT)
@@ -27,15 +30,14 @@ import Control.Monad.Trans.Class (lift)
 import qualified Data.Typeable as Typeable
 import Database.Oracle.Simple.Internal (Connection)
 import qualified Database.Oracle.Simple.Internal as Internal
-import Database.Oracle.Simple.Pool (Pool, withPoolConnection)
+import Database.Oracle.Simple.Pool (Pool, acquireConnection)
 import Numeric.Natural
 import UnliftIO (MonadUnliftIO)
 import qualified UnliftIO
 
 data ConnectionState
   = NotConnected
-  | Connected Connection
-  deriving (Show)
+  | Connected ConnectionContext
 
 newtype SavePoint = SavePoint Natural
   deriving (Show, Eq)
@@ -54,12 +56,17 @@ newtype TransactionStateError = TransactionStateError String
 
 instance Exception TransactionStateError
 
+data ConnectionContext = ConnectionContext
+  { ccConnection :: Connection
+  , ccConnectionUtilizationLock :: MVar ()
+  , ccConnectionCloseLock :: MVar ()
+  }
+
 data OracleEnv = OracleEnv
   { dbEnvPool :: Pool
   , dbConnectionState :: ConnectionState
   , dbTransactionState :: Maybe TransactionState
   }
-  deriving (Show)
 
 withNewTransactionState :: MonadOracle m => (TransactionState -> m a) -> m a
 withNewTransactionState action = do
@@ -78,18 +85,47 @@ withNewTransactionState action = do
 newOracleEnv :: Pool -> OracleEnv
 newOracleEnv pool = OracleEnv pool NotConnected Nothing
 
-withOracleConnection :: MonadOracle m => (Connection -> m a) -> m a
-withOracleConnection action = do
+close :: MonadOracle m => ConnectionContext -> m ()
+close conn =
+  UnliftIO.mask $ \restore -> do
+    mbCloseLock <- UnliftIO.tryTakeMVar (ccConnectionCloseLock conn)
+    case mbCloseLock of
+      Just () -> restore . MIO.liftIO $ Internal.close (ccConnection conn)
+      Nothing -> pure ()
+
+-- | Bracket a computation between acquiring a connection from a session pool and releasing the connection.
+withPoolConnection ::
+  MonadOracle m => (ConnectionContext -> m c) -> m c
+withPoolConnection action = do
+  pool <- dbEnvPool <$> getOracleEnv
+  UnliftIO.bracket
+    ( ConnectionContext
+        <$> MIO.liftIO (acquireConnection pool)
+        <*> UnliftIO.newMVar ()
+        <*> UnliftIO.newMVar ()
+    )
+    close
+    action
+
+withSharedConnectionContext :: MonadOracle m => (ConnectionContext -> m a) -> m a
+withSharedConnectionContext action = do
   dbEnv <- getOracleEnv
   case dbConnectionState dbEnv of
-    Connected connection -> action connection
+    Connected connCtx -> action connCtx
     NotConnected ->
-      UnliftIO.withRunInIO $ \inner ->
-        withPoolConnection (dbEnvPool dbEnv) $ \conn ->
-          inner $
-            localOracleEnv
-              (\env -> env {dbConnectionState = Connected conn})
-              (action conn)
+      withPoolConnection $ \connCtx -> do
+        localOracleEnv
+          (\env -> env {dbConnectionState = Connected connCtx})
+          (action connCtx)
+
+withOracleConnection :: MonadOracle m => (Connection -> m a) -> m a
+withOracleConnection action = withSharedConnectionContext (action . ccConnection)
+
+withLockedOracleConnection :: MonadOracle m => (Connection -> m a) -> m a
+withLockedOracleConnection action =
+  withSharedConnectionContext $ \connCtx ->
+    UnliftIO.withMVar (ccConnectionUtilizationLock connCtx) $ \() ->
+      action (ccConnection connCtx)
 
 -- While we'll probably always want to run a block of queries inside of a `task` or `withTransaction` block
 -- We can change the execution mode to commit on a success when we're writing statements outside of said blocks

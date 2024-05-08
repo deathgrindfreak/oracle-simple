@@ -5,12 +5,11 @@ module Database.Oracle.Simple.Pool
     createPool,
     acquireConnection,
     withPool,
-    withPoolConnection,
     closePool,
   )
 where
 
-import Control.Exception (bracket)
+import Control.Exception.Safe (bracket)
 import Data.IORef (readIORef)
 import Foreign
   ( ForeignPtr,
@@ -36,7 +35,6 @@ import Database.Oracle.Simple.Internal
     DPIContext (DPIContext),
     DPIPool (DPIPool),
     DPIPoolCreateParams (..),
-    close,
     dpiConn_close_finalizer,
     dpiConn_release_finalizer,
     globalContext,
@@ -149,7 +147,3 @@ foreign import ccall unsafe "acquire_connection"
     -- | dpiConn **conn
     Ptr DPIConn ->
     IO CInt
-
--- | Bracket a computation between acquiring a connection from a session pool and releasing the connection.
-withPoolConnection :: Pool -> (Connection -> IO c) -> IO c
-withPoolConnection pool = bracket (acquireConnection pool) close

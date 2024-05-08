@@ -26,6 +26,24 @@ services:
       - stack:/root/.stack
       - stack-work:/$PROJECT_DIR/.stack-work
 
+  oracle-haskell-dev:
+    stdin_open: true
+    tty: true
+    build:
+      context: containers/oracle-haskell-buildpack
+      args:
+        ORACLE_VERSION: "23.4.0.24.05"
+    working_dir: $PROJECT_DIR
+    environment:
+      LD_LIBRARY_PATH: "/opt/oracle/instantclient_23_4"
+    volumes:
+      #Mount application code
+      - .:/$PROJECT_DIR
+      #Mount docker socket so that docker can be used on image
+      - $DOCKER_SOCKET_PATH:/var/run/docker.sock
+      - stack:/root/.stack
+      - stack-work:/$PROJECT_DIR/.stack-work
+
 volumes:
   stack:
     name: stack

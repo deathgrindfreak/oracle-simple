@@ -35,6 +35,7 @@ module Database.Oracle.Simple.Internal
     ErrorInfo (..),
     renderErrorInfo,
     ping,
+    closeStatement,
     fetch,
     close,
     connect,
@@ -743,6 +744,17 @@ toDPIModeExec DPI_MODE_EXEC_COMMIT_ON_SUCCESS = 0x00000020
 toDPIModeExec DPI_MODE_EXEC_BATCH_ERRORS = 0x00000080
 toDPIModeExec DPI_MODE_EXEC_PARSE_ONLY = 0x00000100
 toDPIModeExec DPI_MODE_EXEC_ARRAY_DML_ROWCOUNTS = 0x00100000
+
+foreign import ccall "dpiStmt_close"
+  dpiStmt_close ::
+    DPIStmt ->
+    CString ->
+    CUInt ->
+    IO CInt
+
+closeStatement :: DPIStmt -> IO ()
+closeStatement stmt =
+  throwOracleError =<< dpiStmt_close stmt nullPtr 0
 
 foreign import ccall "dpiStmt_execute"
   dpiStmt_execute ::

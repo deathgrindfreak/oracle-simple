@@ -14,8 +14,8 @@ import qualified Control.Monad.IO.Class as MIO
 import Control.Monad.State.Strict (evalStateT)
 
 import Database.Oracle.Simple.FromRow (FromRow, getRow)
-import Database.Oracle.Simple.Internal (Column (Column), dpiExecute, fetch, prepareStmt)
-import Database.Oracle.Simple.Monad (MonadOracle, getExecutionMode, withOracleConnection)
+import Database.Oracle.Simple.Internal (Column (Column), closeStatement, dpiExecute, fetch, prepareStmt)
+import Database.Oracle.Simple.Monad (MonadOracle, getExecutionMode, withLockedOracleConnection)
 import Database.Oracle.Simple.ToRow (RowWriter (runRowWriter), ToRow, toRow)
 
 {- | Perform a SELECT or other SQL query that is expected to return results.
@@ -34,12 +34,14 @@ query sql param = do
       found <- fetch stmt
       (tsVal :) <$> loop stmt found
   mode <- getExecutionMode
-  withOracleConnection $ \conn -> MIO.liftIO $ do
+  withLockedOracleConnection $ \conn -> MIO.liftIO $ do
     stmt <- prepareStmt conn sql
     _ <- evalStateT (runRowWriter (toRow param) stmt) (Column 0)
     _ <- dpiExecute stmt mode
     found <- fetch stmt
-    loop stmt found
+    rs <- loop stmt found
+    closeStatement stmt
+    pure rs
 
 -- | A version of 'query' that does not perform query substitution.
 query_ ::
@@ -54,11 +56,13 @@ query_ sql = do
       found <- fetch stmt
       (tsVal :) <$> loop stmt found
   mode <- getExecutionMode
-  withOracleConnection $ \conn -> MIO.liftIO $ do
+  withLockedOracleConnection $ \conn -> MIO.liftIO $ do
     stmt <- prepareStmt conn sql
     _ <- MIO.liftIO $ dpiExecute stmt mode
     found <- fetch stmt
-    loop stmt found
+    rs <- loop stmt found
+    closeStatement stmt
+    pure rs
 
 -- Incrementally process a query
 forEach_ ::
@@ -75,11 +79,13 @@ forEach_ sql cont = do
       found <- MIO.liftIO $ fetch stmt
       loop stmt found
   mode <- getExecutionMode
-  withOracleConnection $ \conn -> do
+  withLockedOracleConnection $ \conn -> do
     stmt <- MIO.liftIO $ prepareStmt conn sql
     _ <- MIO.liftIO $ dpiExecute stmt mode
     found <- MIO.liftIO $ fetch stmt
-    loop stmt found
+    rs <- loop stmt found
+    MIO.liftIO $ closeStatement stmt
+    pure rs
 
 queryOneOrNone_ ::
   (FromRow a, MonadOracle m) =>

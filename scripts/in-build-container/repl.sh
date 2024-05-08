@@ -7,6 +7,5 @@ chown root:root ~/.ghci
 chmod 700 ~/.ghci
 
 stack repl \
-    #--main-is oracle-simple:lib \
     --ghci-options '-j +RTS -A32m -RTS -fno-write-ide-info -flocal-ghci-history' \
     oracle-simple:lib oracle-simple:exe:functional-tests

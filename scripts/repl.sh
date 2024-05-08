@@ -1,3 +1,3 @@
 #!/bin/bash
 
-./scripts/in-build-container.sh ./scripts/in-build-container/repl.sh
+./scripts/in-haskell-build-container.sh ./scripts/in-build-container/repl.sh

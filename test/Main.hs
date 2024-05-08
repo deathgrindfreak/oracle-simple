@@ -17,6 +17,8 @@ import Control.Monad (join, void)
 import qualified Control.Monad.IO.Class as MIO
 import Control.Monad.Trans.Reader (ReaderT (..), ask, local)
 import qualified Data.Aeson as Aeson
+import Data.Coerce (coerce)
+import qualified Data.List as List
 import qualified Data.Time as Time
 import qualified Data.Time.Calendar.OrdinalDate as OrdinalDate
 import qualified GHC.Generics as Generics
@@ -27,6 +29,7 @@ import qualified Hedgehog.Range as Range
 import Test.Hspec (Spec, describe, hspec, it, shouldBe)
 import Test.Hspec.Hedgehog (hedgehog)
 import UnliftIO (MonadUnliftIO)
+import qualified UnliftIO.Async as Async
 
 import Database.Oracle.Simple
 import WaitForOracle (waitForOracle)
@@ -61,7 +64,17 @@ main = do
   withPool params $ hspec . spec
 
 params :: ConnectionParams
-params = ConnectionParams "username" "password" "dev-db:1521/devdb" Nothing
+params =
+  ConnectionParams "username" "password" "dev-db:1521/devdb" $
+    Just $
+      defaultAdditionalConnectionParams
+        { minSessions = 20
+        , sessionIncrement = 10
+        , maxSessions = 1000
+        , timeout = 5 * 60
+        , waitTimeout = 5 * 60 * 1000
+        , maxLifetimeSession = 5 * 60
+        }
 
 genDPITimestamp :: HH.Gen DPITimestamp
 genDPITimestamp = do
@@ -300,6 +313,85 @@ spec pool = do
       void $ execute_ "drop table transactions_test"
       pure $ do
         results `shouldBe` [Only 1 .. Only 8] <> [Only 10]
+
+  describe "concurrency tests" $ do
+    it "should handle bare execution (no transaction block)" $ runSpec pool $ do
+      void $ execute_ "create table concurrency_test_no_tx (num_column number(10,0) primary key)"
+      let rows = [0 .. 100]
+      Async.pooledForConcurrentlyN_ 5 rows $ \i -> do
+        void $ execute "insert into concurrency_test_no_tx values (:1)" (Only @Int i)
+      results <- query_ "select * from concurrency_test_no_tx"
+      void $ execute_ "drop table concurrency_test_no_tx"
+      pure $ do
+        List.sort (coerce @[Only Int] @[Int] results) `shouldBe` rows
+
+    it "should handle concurrent queries" $ runSpec pool $ do
+      void $ execute_ "create table concurrency_test_query (num_column number(10,0) primary key)"
+      let rows = [0 .. 100]
+      void $ executeMany "insert into concurrency_test_query values (:1)" (coerce @[Int] @[Only Int] rows)
+      results <- Async.pooledForConcurrentlyN 5 rows $ \i -> do
+        queryOne "select * from concurrency_test_query where num_column = :1" (Only @Int i)
+      void $ execute_ "drop table concurrency_test_query"
+      pure $ do
+        List.sort (coerce @[Only Int] @[Int] results) `shouldBe` rows
+
+    it "should handle multiple concurrent transactions" $ runSpec pool $ do
+      void $ execute_ "create table concurrency_test (num_column number(10,0) primary key)"
+      let rows = [0, 2 .. 100]
+      Async.pooledForConcurrentlyN_ 5 rows $ \i -> do
+        withTransaction $ do
+          void $ execute "insert into concurrency_test values (:1)" (Only @Int i)
+          void $ execute "insert into concurrency_test values (:1)" (Only @Int (i + 1))
+      results <- query_ "select * from concurrency_test"
+      void $ execute_ "drop table concurrency_test"
+      pure $ do
+        List.sort (coerce @[Only Int] @[Int] results) `shouldBe` concatMap (\i -> [i, i + 1]) rows
+
+    it "should handle multiple concurrent executions inside of transaction" $ runSpec pool $ do
+      void $ execute_ "create table concurrency_test_inner (num_column number(10,0) primary key)"
+      let rows = [0, 2 .. 100]
+      withTransaction $ do
+        Async.pooledForConcurrentlyN_ 5 rows $ \i -> do
+          void $ execute "insert into concurrency_test_inner values (:1)" (Only @Int i)
+          void $ execute "insert into concurrency_test_inner values (:1)" (Only @Int (i + 1))
+      results <- query_ "select * from concurrency_test_inner"
+      void $ execute_ "drop table concurrency_test_inner"
+      pure $ do
+        List.sort (coerce @[Only Int] @[Int] results) `shouldBe` concatMap (\i -> [i, i + 1]) rows
+
+    it "should handle multiple concurrent transactions and savepoints" $ runSpec pool $ do
+      void $ execute_ "create table concurrency_test_nested (num_column number(10,0) primary key)"
+      let rows = [0, 6 .. 100]
+      Async.pooledForConcurrentlyN_ 5 rows $ \i -> do
+        withTransaction $ do
+          void $ execute "insert into concurrency_test_nested values (:1)" (Only @Int i)
+          void $ execute "insert into concurrency_test_nested values (:1)" (Only @Int (i + 1))
+          withTransaction $ do
+            void $ execute "insert into concurrency_test_nested values (:1)" (Only @Int (i + 2))
+            void $ execute "insert into concurrency_test_nested values (:1)" (Only @Int (i + 3))
+            withTransaction $ do
+              void $ execute "insert into concurrency_test_nested values (:1)" (Only @Int (i + 4))
+              void $ execute "insert into concurrency_test_nested values (:1)" (Only @Int (i + 5))
+      results <- query_ "select * from concurrency_test_nested"
+      void $ execute_ "drop table concurrency_test_nested"
+      pure $ do
+        List.sort (coerce @[Only Int] @[Int] results) `shouldBe` concatMap (\i -> [i + j | j <- [0 .. 5]]) rows
+
+    it "should handle multiple concurrent transactions and savepoint with rollback" $ runSpec pool $ do
+      void $ execute_ "create table concurrency_test_nested_fail (num_column number(10,0) primary key)"
+      let rows = [0, 4 .. 100]
+      Async.pooledForConcurrentlyN_ 5 rows $ \i -> do
+        withTransaction $ do
+          void $ execute "insert into concurrency_test_nested_fail values (:1)" (Only @Int i)
+          void $ execute "insert into concurrency_test_nested_fail values (:1)" (Only @Int (i + 1))
+          handleOracleError . withTransaction $ do
+            void $ execute "insert into concurrency_test_nested_fail values (:1)" (Only @Int (i + 2))
+            void $ execute "insert into concurrency_test_nested_fail values (:1)" (Only @Int (i + 3))
+            void $ execute "insert into concurrency_test_nested_fail values (:1)" (Only @Int (i + 3)) -- fail
+      results <- query_ "select * from concurrency_test_nested_fail"
+      void $ execute_ "drop table concurrency_test_nested_fail"
+      pure $ do
+        List.sort (coerce @[Only Int] @[Int] results) `shouldBe` concatMap (\i -> [i, i + 1]) rows
 
 handleOracleError :: MonadOracle m => m () -> m ()
 handleOracleError action = do

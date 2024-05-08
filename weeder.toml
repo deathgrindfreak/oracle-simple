@@ -1,2 +1,2 @@
-roots = [ "^Main.main$", "^Database.Oracle.*", "^Paths_.*" ]
+roots = [ "^Main.main$", "^Database.Oracle.*", "^Paths_.*", "^Scratch.*" ]
 type-class-roots = true
