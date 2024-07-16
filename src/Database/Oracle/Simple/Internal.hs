@@ -22,8 +22,10 @@ module Database.Oracle.Simple.Internal
     DPITimestamp (..),
     DPIOracleType (..),
     DPICommonCreateParams (..),
+    CommonCreateParams (..),
     DPIPoolCreateParams (..),
-    AdditionalConnectionParams (..),
+    PoolCreateParams (..),
+    DPIConnectionCreateParams (..),
     DPIPool (..),
     WriteBuffer (..),
     ReadBuffer (..),
@@ -45,7 +47,9 @@ module Database.Oracle.Simple.Internal
     getServerVersion,
     globalContext,
     withDefaultPoolCreateParams,
-    defaultAdditionalConnectionParams,
+    defaultPoolCreateParams,
+    withDefaultCommonCreateParams,
+    defaultCommonCreateParams,
     dpiExecute,
     getRowCount,
     getQueryValue,
@@ -109,7 +113,7 @@ newtype DPIShardingKeyColumn = DPIShardingKeyColumn (Ptr DPIShardingKeyColumn)
   deriving (Show, Eq)
   deriving newtype (Storable)
 
-data AdditionalConnectionParams = AdditionalConnectionParams
+data PoolCreateParams = PoolCreateParams
   { minSessions :: Natural
   , maxSessions :: Natural
   , sessionIncrement :: Natural
@@ -124,29 +128,25 @@ data AdditionalConnectionParams = AdditionalConnectionParams
   }
   deriving (Eq, Ord, Show)
 
-defaultAdditionalConnectionParams :: AdditionalConnectionParams
-defaultAdditionalConnectionParams =
-  AdditionalConnectionParams
-    { minSessions = 1
-    , maxSessions = 1
-    , sessionIncrement = 0
-    , pingInterval = 60
-    , pingTimeout = 5000
-    , homogeneous = 1
-    , getMode = DPI_MODE_POOL_GET_NOWAIT
-    , timeout = 0
-    , waitTimeout = 0
-    , maxLifetimeSession = 0
-    , maxSessionsPerShard = 0
-    }
+data CommonCreateParams = CommonCreateParams
+  { createMode :: DPICreateMode
+  , encoding :: String
+  , nencoding :: String
+  , edition :: String
+  , driverName :: String
+  , sodaMetadataCache :: Int
+  , stmtCacheSize :: Int
+  }
+  deriving (Eq, Show)
 
 data ConnectionParams = ConnectionParams
   { user :: String
   , pass :: String
   , connString :: String
-  , additionalParams :: Maybe AdditionalConnectionParams
+  , commonCreateParams :: Maybe CommonCreateParams
+  , createPoolParams :: Maybe PoolCreateParams
   }
-  deriving (Eq, Ord, Show)
+  deriving (Eq, Show)
 
 connectDPI ::
   ConnectionParams ->
@@ -177,7 +177,7 @@ connect params = do
 withConnection :: ConnectionParams -> (Connection -> IO c) -> IO c
 withConnection params = bracket (connect params) close
 
-foreign import ccall unsafe "dpiConn_create"
+foreign import ccall "dpiConn_create"
   dpiConn_create ::
     -- | const dpiContext *context
     DPIContext ->
@@ -196,7 +196,7 @@ foreign import ccall unsafe "dpiConn_create"
     -- | const dpiCommonCreateParams *commonParams
     Ptr DPICommonCreateParams ->
     -- | const dpiConnCreateParams *createParams
-    Ptr ConnectionCreateParams ->
+    Ptr DPIConnectionCreateParams ->
     -- | dpi * conn
     Ptr DPIConn ->
     IO CInt
@@ -291,6 +291,25 @@ fromDPIPurity 1 = Just DPI_PURITY_NEW
 fromDPIPurity 2 = Just DPI_PURITY_SELF
 fromDPIPurity _ = Nothing
 
+defaultPoolCreateParams :: IO PoolCreateParams
+defaultPoolCreateParams =
+  withDefaultPoolCreateParams $ \defaultPoolCreateParamsPtr -> do
+    DPIPoolCreateParams {..} <- peek defaultPoolCreateParamsPtr
+    pure
+      PoolCreateParams
+        { minSessions = fromIntegral dpi_minSessions
+        , maxSessions = fromIntegral dpi_maxSessions
+        , sessionIncrement = fromIntegral dpi_sessionIncrement
+        , pingInterval = fromIntegral dpi_pingInterval
+        , pingTimeout = fromIntegral dpi_pingTimeout
+        , homogeneous = fromIntegral dpi_homogeneous
+        , getMode = dpi_getMode
+        , timeout = fromIntegral dpi_timeout
+        , waitTimeout = fromIntegral dpi_waitTimeout
+        , maxLifetimeSession = fromIntegral dpi_maxLifetimeSession
+        , maxSessionsPerShard = fromIntegral dpi_maxSessionsPerShard
+        }
+
 foreign import ccall "dpiContext_initPoolCreateParams"
   dpiContext_initPoolCreateParams ::
     DPIContext ->
@@ -329,6 +348,54 @@ data DPIPoolCreateParams = DPIPoolCreateParams
   deriving (Show, Eq, Generic)
   deriving anyclass (GStorable)
 
+defaultCommonCreateParams :: IO CommonCreateParams
+defaultCommonCreateParams = do
+  withDefaultCommonCreateParams $ \defaultCommonCreateParamsPtr -> do
+    DPICommonCreateParams {..} <- peek defaultCommonCreateParamsPtr
+    encoding <- peekCString dpi_encoding
+    nencoding <- peekCString dpi_nencoding
+    edition <- peekCStringLen (dpi_edition, fromIntegral dpi_editionLength)
+    driverName <- peekCStringLen (dpi_driverName, fromIntegral dpi_driverNameLength)
+    pure $
+      CommonCreateParams
+        { createMode = dpi_createMode
+        , encoding
+        , nencoding
+        , edition
+        , driverName
+        , sodaMetadataCache = dpi_sodaMetadataCache
+        , stmtCacheSize = fromIntegral dpi_stmtCacheSize
+        }
+
+foreign import ccall "dpiContext_initCommonCreateParams"
+  dpiContext_initCommonCreateParams ::
+    DPIContext ->
+    Ptr DPICommonCreateParams ->
+    IO Int
+
+withDefaultCommonCreateParams :: (Ptr DPICommonCreateParams -> IO a) -> IO a
+withDefaultCommonCreateParams f = do
+  ctx <- readIORef globalContext
+  alloca $ \commonCreateParamsPtr -> do
+    status <- dpiContext_initCommonCreateParams ctx commonCreateParamsPtr
+    unless (status == 0) $ do
+      error $ "default common create params status wasn't 0" <> show status
+    f commonCreateParamsPtr
+
+data DPICommonCreateParams = DPICommonCreateParams
+  { dpi_createMode :: DPICreateMode
+  , dpi_encoding :: CString
+  , dpi_nencoding :: CString
+  , dpi_edition :: CString
+  , dpi_editionLength :: CInt
+  , dpi_driverName :: CString
+  , dpi_driverNameLength :: CInt
+  , dpi_sodaMetadataCache :: Int
+  , dpi_stmtCacheSize :: CInt
+  }
+  deriving (Show, Eq, Generic)
+  deriving anyclass (GStorable)
+
 data DPIPoolGetMode
   = DPI_MODE_POOL_GET_FORCEGET
   | DPI_MODE_POOL_GET_NOWAIT
@@ -360,7 +427,7 @@ instance Storable DPIPoolGetMode where
   poke ptr mode =
     poke (castPtr ptr) (toDPIPoolGetMode mode)
 
-data ConnectionCreateParams = ConnectionCreateParams
+data DPIConnectionCreateParams = DPIConnectionCreateParams
   { authMode :: DPIAuthMode
   , connectionClass :: CString
   , connectionClassLength :: CUInt
@@ -383,20 +450,6 @@ data ConnectionCreateParams = ConnectionCreateParams
   , superShardingKeyColumns :: DPIShardingKeyColumn
   , numSuperShardingKeyColumns :: Word8
   , outNewSession :: CInt
-  }
-  deriving (Show, Eq, Generic)
-  deriving anyclass (GStorable)
-
-data DPICommonCreateParams = DPICommonCreateParams
-  { createMode :: DPICreateMode
-  , encoding :: CString
-  , nencoding :: CString
-  , edition :: CString
-  , editionLength :: CInt
-  , driverName :: CString
-  , driverNameLength :: CInt
-  , sodaMetadataCache :: Int
-  , stmtCacheSize :: CInt
   }
   deriving (Show, Eq, Generic)
   deriving anyclass (GStorable)
@@ -430,7 +483,7 @@ fromDPICreateMode 0x00000001 = Just DPI_MODE_CREATE_THREADED
 fromDPICreateMode 0x00000004 = Just DPI_MODE_CREATE_EVENTS
 fromDPICreateMode _ = Nothing
 
-foreign import ccall unsafe "context_create"
+foreign import ccall "context_create"
   dpiContext_create ::
     -- | major version
     CInt ->
@@ -588,11 +641,11 @@ getServerVersion (Connection fptr) versionInfo = do
 foreign import ccall "dpiContext_initConnCreateParams"
   dpiContext_initConnCreateParams ::
     DPIContext ->
-    Ptr ConnectionCreateParams ->
+    Ptr DPIConnectionCreateParams ->
     IO Int
 
 withConnCreateParams ::
-  (ConnectionCreateParams -> IO a) ->
+  (DPIConnectionCreateParams -> IO a) ->
   IO a
 withConnCreateParams f = do
   ctx <- readIORef globalContext
@@ -1138,7 +1191,7 @@ ping (Connection fptr) =
   withForeignPtr fptr $ fmap (== 0) . dpiConn_ping
 
 -- | DPI_EXPORT int dpiConn_getIsHealthy(dpiConn *conn, int *isHealthy);
-foreign import ccall unsafe "dpiConn_getIsHealthy"
+foreign import ccall "dpiConn_getIsHealthy"
   dpiConn_getIsHealthy ::
     Ptr DPIConn ->
     Ptr CInt ->

@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Database.Oracle.Simple.Pool
@@ -23,22 +24,24 @@ import Foreign
     peek,
     withForeignPtr,
   )
-import Foreign.C (CInt (CInt), CString, CUInt (CUInt), withCStringLen)
+import Foreign.C (CInt (CInt), CString, CUInt (CUInt), withCString, withCStringLen)
 import Foreign.Storable (poke)
 
 import Database.Oracle.Simple.Internal
-  ( AdditionalConnectionParams (..),
+  ( CommonCreateParams (..),
     Connection (Connection),
-    ConnectionParams (additionalParams, connString, pass, user),
-    DPICommonCreateParams,
+    ConnectionParams (..),
+    DPICommonCreateParams (..),
     DPIConn (DPIConn),
     DPIContext (DPIContext),
     DPIPool (DPIPool),
     DPIPoolCreateParams (..),
+    PoolCreateParams (..),
     dpiConn_close_finalizer,
     dpiConn_release_finalizer,
     globalContext,
     throwOracleError,
+    withDefaultCommonCreateParams,
     withDefaultPoolCreateParams,
   )
 
@@ -55,40 +58,86 @@ createPool params = do
   DPIPool poolPtr <- alloca $ \connPtr -> do
     withCStringLen (user params) $ \(userCString, fromIntegral -> userLen) ->
       withCStringLen (pass params) $ \(passCString, fromIntegral -> passLen) ->
-        withCStringLen (connString params) $ \(connCString, fromIntegral -> connLen) -> do
-          let poolCreate paramsPtr =
-                dpiPool_create ctx userCString userLen passCString passLen connCString connLen nullPtr paramsPtr connPtr
-          status <-
-            case additionalParams params of
-              Nothing -> poolCreate nullPtr
-              Just addParams ->
-                withDefaultPoolCreateParams $ \defaultPoolParmsPtr -> do
-                  defaultPoolParams <- peek defaultPoolParmsPtr
+        withCStringLen (connString params) $ \(connCString, fromIntegral -> connLen) ->
+          withCommonCreateParams (commonCreateParams params) $ \commonCreateParamsPtr ->
+            withCreatePoolParams (createPoolParams params) $ \createConnParamsPtr -> do
+              status <-
+                dpiPool_create
+                  ctx
+                  userCString
+                  userLen
+                  passCString
+                  passLen
+                  connCString
+                  connLen
+                  commonCreateParamsPtr
+                  createConnParamsPtr
+                  connPtr
 
-                  poke
-                    defaultPoolParmsPtr
-                    defaultPoolParams
-                      { dpi_minSessions = fromIntegral $ minSessions addParams
-                      , dpi_maxSessions = fromIntegral $ maxSessions addParams
-                      , dpi_sessionIncrement = fromIntegral $ sessionIncrement addParams
-                      , dpi_pingInterval = fromIntegral $ pingInterval addParams
-                      , dpi_pingTimeout = fromIntegral $ pingTimeout addParams
-                      , dpi_homogeneous = fromIntegral $ homogeneous addParams
-                      , dpi_getMode = getMode addParams
-                      , dpi_timeout = fromIntegral $ timeout addParams
-                      , dpi_waitTimeout = fromIntegral $ waitTimeout addParams
-                      , dpi_maxLifetimeSession = fromIntegral $ maxLifetimeSession addParams
-                      , dpi_maxSessionsPerShard = fromIntegral $ maxSessionsPerShard addParams
-                      }
-
-                  poolCreate defaultPoolParmsPtr
-
-          throwOracleError status
-          peek connPtr
+              throwOracleError status
+              peek connPtr
   fptr <- newForeignPtr_ poolPtr
   addForeignPtrFinalizer dpiPool_release_finalizer fptr
   addForeignPtrFinalizer dpiPool_close_finalizer fptr
   pure (Pool fptr)
+
+withCommonCreateParams ::
+  Maybe CommonCreateParams ->
+  (Ptr DPICommonCreateParams -> IO a) ->
+  IO a
+withCommonCreateParams mbCommonCreateParams f =
+  case mbCommonCreateParams of
+    Nothing -> f nullPtr
+    Just CommonCreateParams {..} ->
+      withDefaultCommonCreateParams $ \defaultCommonCreateParamsPtr -> do
+        defaultCommonCreateParams <- peek defaultCommonCreateParamsPtr
+
+        withCString encoding $ \encodingCString ->
+          withCString nencoding $ \nencodingCString ->
+            withCStringLen edition $ \(editionCString, fromIntegral -> editionLen) ->
+              withCStringLen driverName $ \(driverNameCString, fromIntegral -> driverNameLen) ->
+                poke
+                  defaultCommonCreateParamsPtr
+                  defaultCommonCreateParams
+                    { dpi_createMode = createMode
+                    , dpi_encoding = encodingCString
+                    , dpi_nencoding = nencodingCString
+                    , dpi_edition = editionCString
+                    , dpi_editionLength = editionLen
+                    , dpi_driverName = driverNameCString
+                    , dpi_driverNameLength = driverNameLen
+                    , dpi_sodaMetadataCache = sodaMetadataCache
+                    , dpi_stmtCacheSize = fromIntegral stmtCacheSize
+                    }
+        f defaultCommonCreateParamsPtr
+
+withCreatePoolParams ::
+  Maybe PoolCreateParams ->
+  (Ptr DPIPoolCreateParams -> IO a) ->
+  IO a
+withCreatePoolParams mbCreateConnectionParams f =
+  case mbCreateConnectionParams of
+    Nothing -> f nullPtr
+    Just addParams ->
+      withDefaultPoolCreateParams $ \defaultPoolParmsPtr -> do
+        defaultPoolParams <- peek defaultPoolParmsPtr
+
+        poke
+          defaultPoolParmsPtr
+          defaultPoolParams
+            { dpi_minSessions = fromIntegral $ minSessions addParams
+            , dpi_maxSessions = fromIntegral $ maxSessions addParams
+            , dpi_sessionIncrement = fromIntegral $ sessionIncrement addParams
+            , dpi_pingInterval = fromIntegral $ pingInterval addParams
+            , dpi_pingTimeout = fromIntegral $ pingTimeout addParams
+            , dpi_homogeneous = fromIntegral $ homogeneous addParams
+            , dpi_getMode = getMode addParams
+            , dpi_timeout = fromIntegral $ timeout addParams
+            , dpi_waitTimeout = fromIntegral $ waitTimeout addParams
+            , dpi_maxLifetimeSession = fromIntegral $ maxLifetimeSession addParams
+            , dpi_maxSessionsPerShard = fromIntegral $ maxSessionsPerShard addParams
+            }
+        f defaultPoolParmsPtr
 
 foreign import ccall unsafe "dpiPool_create"
   dpiPool_create ::

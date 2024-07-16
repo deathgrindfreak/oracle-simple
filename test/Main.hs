@@ -60,21 +60,34 @@ data MixTable = MixTable
 
 main :: IO ()
 main = do
-  waitForOracle params (2 * 60) 5
-  withPool params $ hspec . spec
+  ps <- params
+  waitForOracle ps (2 * 60) 5
+  withPool ps $ hspec . spec
 
-params :: ConnectionParams
-params =
-  ConnectionParams "username" "password" "dev-db:1521/devdb" $
-    Just $
-      defaultAdditionalConnectionParams
-        { minSessions = 20
-        , sessionIncrement = 10
-        , maxSessions = 1000
-        , timeout = 5 * 60
-        , waitTimeout = 5 * 60 * 1000
-        , maxLifetimeSession = 5 * 60
-        }
+params :: IO ConnectionParams
+params = do
+  defPoolParams <- defaultPoolCreateParams
+  defCommonCreateParams <- defaultCommonCreateParams
+  pure $
+    ConnectionParams
+      "username"
+      "password"
+      "dev-db:1521/devdb"
+      ( Just $
+          defCommonCreateParams
+            { encoding = "UTF8"
+            }
+      )
+      ( Just $
+          defPoolParams
+            { minSessions = 20
+            , sessionIncrement = 10
+            , maxSessions = 1000
+            , timeout = 5 * 60
+            , waitTimeout = 5 * 60 * 1000
+            , maxLifetimeSession = 5 * 60
+            }
+      )
 
 genDPITimestamp :: HH.Gen DPITimestamp
 genDPITimestamp = do
