@@ -322,7 +322,7 @@ withDefaultPoolCreateParams f = do
   alloca $ \poolCreateParamsPtr -> do
     status <- dpiContext_initPoolCreateParams ctx poolCreateParamsPtr
     unless (status == 0) $ do
-      error $ "pool create params status wasn't 0" <> show status
+      throwIO . userError $ "non-zero pool create params status: " <> show status
     f poolCreateParamsPtr
 
 data DPIPoolCreateParams = DPIPoolCreateParams
@@ -379,7 +379,7 @@ withDefaultCommonCreateParams f = do
   alloca $ \commonCreateParamsPtr -> do
     status <- dpiContext_initCommonCreateParams ctx commonCreateParamsPtr
     unless (status == 0) $ do
-      error $ "default common create params status wasn't 0" <> show status
+      throwIO . userError $ "non-zero default common create params status: " <> show status
     f commonCreateParamsPtr
 
 data DPICommonCreateParams = DPICommonCreateParams
@@ -603,7 +603,7 @@ getClientVersion = do
     statusCode <- dpiContext_getClientVersion ctx versionPtr
     if statusCode == 0
       then peek versionPtr
-      else error ("getClientVersion: " <> show statusCode)
+      else throwIO . userError $ "getClientVersion: " <> show statusCode
 
 foreign import ccall "dpiContext_getClientVersion"
   dpiContext_getClientVersion ::
@@ -636,7 +636,7 @@ getServerVersion (Connection fptr) versionInfo = do
             versionInfoPtr
         if status == 0
           then (peekCString <=< peek) releaseStringPtr
-          else error $ show status <> " oh no!"
+          else throwIO . userError $ "getServerVersion: " <> show status
 
 foreign import ccall "dpiContext_initConnCreateParams"
   dpiContext_initConnCreateParams ::
@@ -652,7 +652,7 @@ withConnCreateParams f = do
   alloca $ \connCreateParamsPtr -> do
     status <- dpiContext_initConnCreateParams ctx connCreateParamsPtr
     unless (status == 0) $ do
-      error $ "conn create params isn't 0" <> show status
+      throwIO . userError $ "conn create params isn't 0" <> show status
     f =<< peek connCreateParamsPtr
 
 data DPIBytes = DPIBytes
@@ -869,7 +869,7 @@ getQueryValue stmt pos = do
       mbNativeType <- uintToDPINativeType <$> peek typPtr
       case mbNativeType of
         Nothing ->
-          error "getQueryValue: Invalid type returned"
+          throwIO . userError $ "getQueryValue: Invalid type returned"
         Just nativeType -> do
           dataBuffer <- peek buffer
           pure (nativeType, dataBuffer)
