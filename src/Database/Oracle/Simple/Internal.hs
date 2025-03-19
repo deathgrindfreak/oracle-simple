@@ -35,6 +35,9 @@ module Database.Oracle.Simple.Internal
     ConnectionParams (..),
     OracleError (..),
     ErrorInfo (..),
+    -- opaque types
+    ODPICData,
+    ODPICVar,
     renderErrorInfo,
     ping,
     closeStatement,
@@ -51,6 +54,7 @@ module Database.Oracle.Simple.Internal
     withDefaultCommonCreateParams,
     defaultCommonCreateParams,
     dpiExecute,
+    dpiExecuteMany,
     getRowCount,
     getQueryValue,
     prepareStmt,
@@ -60,6 +64,8 @@ module Database.Oracle.Simple.Internal
     isHealthy,
     dpiTimeStampToUTCDPITimeStamp,
     throwOracleError,
+    dpiOracleTypeToUInt,
+    dpiNativeTypeToUInt,
     dpiData_getIsNull,
     dpiData_getDouble,
     dpiData_getFloat,
@@ -70,14 +76,20 @@ module Database.Oracle.Simple.Internal
     dpiData_getTimestamp,
     dpiConn_close_finalizer,
     dpiConn_release_finalizer,
+    dpiConn_newVar,
+    dpiStmt_bindByPos,
+    dpiVar_getNumElementsInArray,
+    dpiVar_setNumElementsInArray,
+    dpiVar_getSizeInBytes,
+    dpiVar_setFromBytes,
+    dpiVar_release,
   )
 where
 
 import Control.Exception (Exception, bracket, throwIO)
 import Control.Monad (unless, (<=<))
 import Data.IORef (IORef, newIORef, readIORef)
-import Data.Int (Int16, Int64, Int8)
-import qualified Data.Time as Time
+import Data.Int (Int64)
 import Data.Typeable (Typeable)
 import Data.Word (Word16, Word32, Word64, Word8)
 import Foreign.C.String (CString, newCString, newCStringLen, peekCString, peekCStringLen, withCStringLen)
@@ -89,6 +101,8 @@ import Foreign.Storable.Generic (GStorable, Storable (..))
 import GHC.Generics (Generic)
 import GHC.TypeLits (Natural)
 import System.IO.Unsafe (unsafePerformIO)
+
+import Database.Oracle.Simple.Timestamp
 
 newtype DPIStmt = DPIStmt (Ptr DPIStmt)
   deriving (Show, Eq)
@@ -669,63 +683,6 @@ mkDPIBytesUTF8 str = do
   dpiBytesEncoding <- newCString "UTF-8"
   pure $ DPIBytes {..}
 
-data DPIIntervalDS = DPIIntervalDS
-  { days :: CInt
-  , hours :: CInt
-  , minutes :: CInt
-  , seconds :: CInt
-  , fseconds :: CInt
-  }
-  deriving (Show, Eq, Generic)
-  deriving anyclass (GStorable)
-
-data DPIIntervalYM = DPIIntervalYM
-  { years :: CInt
-  , months :: CInt
-  }
-  deriving (Show, Eq, Generic)
-  deriving anyclass (GStorable)
-
-data DPITimestamp = DPITimestamp
-  { year :: Int16
-  , month :: Word8
-  , day :: Word8
-  , hour :: Word8
-  , minute :: Word8
-  , second :: Word8
-  , fsecond :: CUInt
-  , tzHourOffset :: Int8
-  , tzMinuteOffset :: Int8
-  }
-  deriving (Show, Eq, Generic)
-  deriving anyclass (GStorable)
-
-{- | Converts a DPITimestamp into the UTCTime zone by applying the offsets
-to the year, month, day, hour, minutes and seconds
--}
-dpiTimeStampToUTCDPITimeStamp :: DPITimestamp -> DPITimestamp
-dpiTimeStampToUTCDPITimeStamp dpi@DPITimestamp {..} =
-  let offsetInMinutes, currentMinutes :: Int
-      offsetInMinutes = negate $ (fromIntegral tzHourOffset * 60) + fromIntegral tzMinuteOffset
-      currentMinutes = (fromIntegral hour * 60) + fromIntegral minute
-
-      (hours, minutes) = ((currentMinutes + offsetInMinutes) `mod` 1440) `quotRem` 60
-      gregorianDay = Time.fromGregorian (fromIntegral year) (fromIntegral month) (fromIntegral day)
-      updatedDay
-        | currentMinutes + offsetInMinutes > 1440 = Time.addDays 1 gregorianDay
-        | currentMinutes + offsetInMinutes < 0 = Time.addDays (-1) gregorianDay
-        | otherwise = gregorianDay
-      (year', month', day') = Time.toGregorian updatedDay
-   in dpi
-        { tzHourOffset = 0
-        , tzMinuteOffset = 0
-        , year = fromIntegral year'
-        , month = fromIntegral month'
-        , day = fromIntegral day'
-        , hour = fromIntegral hours
-        , minute = fromIntegral minutes
-        }
-
 data DPIAppContext = DPIAppContext
   { namespaceName :: CString
   , namespaceNameLength :: CUInt
@@ -1178,7 +1135,7 @@ getRowCount stmt = do
 
 -- | Column position, starting with 1 for the first column.
 newtype Column = Column {getColumn :: Word32}
-  deriving newtype (Num, Show)
+  deriving newtype (Num, Enum, Show)
 
 foreign import ccall "dpiConn_ping"
   dpiConn_ping ::
@@ -1211,3 +1168,113 @@ Structurally equivalent to 'Data.Functor.Identity.Identity'.
 newtype Only a = Only {fromOnly :: a}
   deriving stock (Eq, Ord, Read, Show, Generic)
   deriving newtype (Enum)
+
+-- Opaque type for dpiVar reference
+data ODPICVar
+
+-- Opaque type for dpiData reference
+data ODPICData
+
+-- | Variables that can be referenced in parameter binds
+foreign import ccall "dpiConn_newVar"
+  dpiConn_newVar ::
+    -- | dpiConn *conn
+    Ptr DPIConn ->
+    -- | dpiOracleTypeNum oracleTypeNum
+    CUInt ->
+    -- | dpiNativeTypeNum nativeTypeNum
+    CUInt ->
+    -- | uint32_t maxArraySize
+    CUInt ->
+    -- | uint32_t size
+    CUInt ->
+    -- | int sizeIsBytes
+    Bool ->
+    -- | int isArray
+    Bool ->
+    -- | TODO dpiObjectType *objType
+    Ptr CUInt ->
+    -- | dpiVar **var (OUT)
+    Ptr (Ptr ODPICVar) ->
+    -- | dpiData **data (OUT)
+    Ptr (Ptr ODPICData) ->
+    -- | int
+    IO CInt
+
+foreign import ccall "&dpiVar_release"
+  dpiVar_release :: FunPtr (Ptr ODPICVar -> IO ())
+
+foreign import ccall "dpiVar_getNumElementsInArray"
+  dpiVar_getNumElementsInArray ::
+    -- | dpiVar *var
+    Ptr ODPICVar ->
+    -- | uint32_t *numElements (OUT)
+    Ptr CUInt ->
+    -- | int
+    IO CInt
+
+foreign import ccall "dpiVar_setNumElementsInArray"
+  dpiVar_setNumElementsInArray ::
+    -- | dpiVar *var
+    Ptr ODPICVar ->
+    -- | uint32_t numElements
+    CUInt ->
+    -- | int
+    IO CInt
+
+foreign import ccall "dpiVar_getSizeInBytes"
+  dpiVar_getSizeInBytes ::
+    -- | dpiVar *var
+    Ptr ODPICVar ->
+    -- | uint32_t *sizeInBytes
+    Ptr CUInt ->
+    -- | int
+    IO CInt
+
+foreign import ccall "dpiVar_setFromBytes"
+  dpiVar_setFromBytes ::
+    -- | dpiVar *var
+    Ptr ODPICVar ->
+    -- | uint32_t pos
+    CUInt ->
+    -- | const char *value
+    CString ->
+    -- | uint32_t valueLength
+    CUInt ->
+    -- | int
+    IO CInt
+
+-- Bind a variable to a statement by position
+foreign import ccall "dpiStmt_bindByPos"
+  dpiStmt_bindByPos ::
+    -- | dpiStmt *stmt
+    DPIStmt ->
+    -- | uint32_t pos
+    CUInt ->
+    -- | dpiVar *var
+    Ptr ODPICVar ->
+    -- | int
+    IO CInt
+
+foreign import ccall "dpiStmt_executeMany"
+  dpiStmt_executeMany ::
+    -- | dpiStmt *stmt
+    DPIStmt ->
+    -- | dpiExecMode mode
+    CUInt ->
+    -- | numIters
+    CUInt ->
+    -- | int
+    IO CInt
+
+-- | Execute a statement.
+dpiExecuteMany ::
+  -- | Statement to be executed
+  DPIStmt ->
+  -- | Execution mode
+  DPIModeExec ->
+  -- | Array length (iteration count)
+  Int ->
+  IO ()
+dpiExecuteMany stmt mode len =
+  throwOracleError =<< dpiStmt_executeMany stmt (toDPIModeExec mode) (fromIntegral len)

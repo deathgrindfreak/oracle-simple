@@ -6,6 +6,7 @@ module Database.Oracle.Simple.Query
     queryOne_,
     queryOneOrNone,
     queryOneOrNone_,
+    query',
   )
 where
 
@@ -17,6 +18,7 @@ import Database.Oracle.Simple.FromRow (FromRow, getRow)
 import Database.Oracle.Simple.Internal (Column (Column), closeStatement, dpiExecute, fetch, prepareStmt)
 import Database.Oracle.Simple.Monad (MonadOracle, getExecutionMode, withLockedOracleConnection)
 import Database.Oracle.Simple.ToRow (RowWriter (runRowWriter), ToRow, toRow)
+import Database.Oracle.Simple.Variable (ToBinding (..), bindRows)
 
 {- | Perform a SELECT or other SQL query that is expected to return results.
 All results are retrieved and converted before this function ends.
@@ -37,6 +39,29 @@ query sql param = do
   withLockedOracleConnection $ \conn -> MIO.liftIO $ do
     stmt <- prepareStmt conn sql
     _ <- evalStateT (runRowWriter (toRow param) stmt) (Column 0)
+    _ <- dpiExecute stmt mode
+    found <- fetch stmt
+    rs <- loop stmt found
+    closeStatement stmt
+    pure rs
+
+-- | Uses ToBinding instead of ToRow
+query' ::
+  (FromRow a, ToBinding b, MonadOracle m) =>
+  String ->
+  b ->
+  m [a]
+query' sql params = do
+  let
+    loop _ n | n < 1 = pure []
+    loop stmt _ = do
+      tsVal <- getRow stmt
+      found <- fetch stmt
+      (tsVal :) <$> loop stmt found
+  mode <- getExecutionMode
+  withLockedOracleConnection $ \conn -> MIO.liftIO $ do
+    stmt <- prepareStmt conn sql
+    _ <- bindRows conn stmt (pure params)
     _ <- dpiExecute stmt mode
     found <- fetch stmt
     rs <- loop stmt found

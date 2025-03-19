@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
 
@@ -12,11 +11,12 @@ where
 import Data.Int (Int32, Int64)
 import Data.Proxy (Proxy (..))
 import qualified Data.Text as T
-import Data.Time (LocalTime (..), TimeOfDay (..), TimeZone (..), UTCTime (..), ZonedTime (..), toGregorian, utc, utcToZonedTime)
+import Data.Time (UTCTime)
 import Foreign.Marshal.Utils (fromBool)
 import Numeric.Natural (Natural)
 
 import Database.Oracle.Simple.Internal
+import Database.Oracle.Simple.Timestamp (utcTimeToDPITimestamp)
 
 class ToField a where
   toDPINativeType :: Proxy a -> DPINativeType
@@ -69,26 +69,3 @@ instance ToField DPITimestamp where
 instance ToField UTCTime where
   toDPINativeType _ = DPI_NATIVE_TYPE_TIMESTAMP
   toField utcTime = pure $ AsTimestamp (utcTimeToDPITimestamp utcTime)
-
-utcTimeToDPITimestamp :: UTCTime -> DPITimestamp
-utcTimeToDPITimestamp utcTime = dpiTimeStampToUTCDPITimeStamp dpiTs
-  where
-    ZonedTime {..} = utcToZonedTime utc utcTime
-    LocalTime {..} = zonedTimeToLocalTime
-    (year, month, day) = toGregorian localDay
-    TimeOfDay {..} = localTimeOfDay
-    TimeZone {..} = zonedTimeZone
-    (seconds, fractionalSeconds) = properFraction todSec
-    (hourOffset, minuteOffset) = timeZoneMinutes `quotRem` 60
-    dpiTs =
-      DPITimestamp
-        { year = fromIntegral year
-        , month = fromIntegral month
-        , day = fromIntegral day
-        , hour = fromIntegral todHour
-        , minute = fromIntegral todMin
-        , second = seconds
-        , fsecond = truncate (fractionalSeconds * 1e9)
-        , tzHourOffset = fromIntegral hourOffset
-        , tzMinuteOffset = fromIntegral minuteOffset
-        }

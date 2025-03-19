@@ -38,7 +38,6 @@ when:
         - -Wnoncanonical-monad-instances
         - -Wredundant-constraints
         - -Wpartial-fields
-        - -Wmissed-specialisations
         - -Wunused-packages
         - -O2
         - -haddock
@@ -55,20 +54,22 @@ library:
   exposed-modules:
     - Database.Oracle.Simple
   dependencies:
+    - aeson
     - base
     - bytestring
+    - containers
     - derive-storable
-    - text
     - mtl
-    - time
-    - aeson
-    - scientific
-    - vector
-    - uuid
     - random
-    - transformers
     - safe-exceptions
+    - scientific
+    - semigroupoids
+    - text
+    - time
+    - transformers
     - unliftio
+    - uuid
+    - vector
   extra-libraries: odpic
   when:
     - condition: os(linux) && flag(default_paths)
@@ -82,6 +83,7 @@ library:
       extra-lib-dirs: /usr/local/lib
   c-sources:
     - cbits/dpiDataBuffer.c
+    - cbits/dpiVar.c
     - cbits/oracleHelpers.c
 
 executables:
@@ -102,7 +104,6 @@ executables:
       - -Wnoncanonical-monad-instances
       - -Wredundant-constraints
       - -Wpartial-fields
-      - -Wmissed-specialisations
       - -Wunused-packages
       - -O2
       - -threaded
@@ -120,3 +121,21 @@ executables:
       - transformers
       - aeson
       - unliftio
+
+benchmarks:
+  bench:
+    ghc-options:
+      - -Wall
+      - -rtsopts
+      - "-with-rtsopts=-A64m"
+    source-dirs: bench
+    main: Main.hs
+    dependencies:
+      - base
+      - deepseq
+      - oracle-simple
+      - text
+      - time
+      - tasty-bench
+      - unliftio
+    default-extensions: OverloadedStrings
