@@ -19,6 +19,7 @@ import Control.Monad.Trans.Reader (ReaderT (..), ask, local)
 import qualified Data.Aeson as Aeson
 import Data.Coerce (coerce)
 import qualified Data.List as List
+import qualified Data.List.NonEmpty as NE
 import qualified Data.Time as Time
 import qualified Data.Time.Calendar.OrdinalDate as OrdinalDate
 import qualified GHC.Generics as Generics
@@ -26,7 +27,7 @@ import Hedgehog ((===))
 import qualified Hedgehog as HH
 import qualified Hedgehog.Gen as Gen
 import qualified Hedgehog.Range as Range
-import Test.Hspec (Spec, describe, hspec, it, shouldBe)
+import Test.Hspec
 import Test.Hspec.Hedgehog (hedgehog)
 import UnliftIO (MonadUnliftIO)
 import qualified UnliftIO.Async as Async
@@ -57,6 +58,15 @@ data MixTable = MixTable
   }
   deriving (Generics.Generic, Eq, Show)
   deriving anyclass (FromRow, ToRow)
+
+data InsertTest = MkInsertTest
+  { int :: Int
+  , str :: String
+  , dub :: Double
+  , when :: Maybe Time.UTCTime
+  }
+  deriving (Generics.Generic, Eq, Show)
+  deriving anyclass (FromRow, ToBinding)
 
 main :: IO ()
 main = do
@@ -151,6 +161,21 @@ spec pool = do
       p <- ping
       pure $ do
         p `shouldBe` True
+
+  describe "Variable tests" $ do
+    it "Should insert multiple rows from variables" $ runSpec pool $ do
+      void $ Exc.tryAny $ execute_ "drop table test"
+      void $ execute_ "create table test(num number(10,0), txt varchar2(50 char), double binary_double, somewhen timestamp)"
+      let testWhen = Time.UTCTime (Time.fromGregorian 2024 1 1) 0
+          test = MkInsertTest 100 "hello" 1.2 (Just testWhen)
+          test2 = MkInsertTest 200 "world" 2.3 Nothing
+          test3 = MkInsertTest 42 "thisisalongerstring" 9999912312412412412.9992414124299 Nothing
+      results <- do
+        _ <- executeManyArray "insert into test values (:1,:2,:3,:4)" (NE.fromList [test, test2, test3])
+        query_ @InsertTest "select * from test"
+      void $ Exc.tryAny $ execute_ "drop table test"
+      pure $
+        results `shouldBe` [test, test2, test3]
 
   describe "DPITimeStamp tests" $ do
     it "Should roundtrip DPITimestamp through UTCTime" $ \_ -> do

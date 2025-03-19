@@ -1,5 +1,7 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -19,13 +21,15 @@ module Database.Oracle.Simple.Monad
     task,
     ping,
     isHealthy,
+    OracleT (..),
+    runOracleT,
   )
 where
 
 import Control.Concurrent.MVar (MVar)
 import Control.Exception.Safe (Exception, MonadCatch, MonadThrow)
 import qualified Control.Monad.IO.Class as MIO
-import Control.Monad.Reader (ReaderT (..), mapReaderT)
+import Control.Monad.Reader (ReaderT (..), ask, local, mapReaderT)
 import Control.Monad.Trans.Class (lift)
 import qualified Data.Typeable as Typeable
 import Database.Oracle.Simple.Internal (Connection)
@@ -170,3 +174,23 @@ task action = do
   case dbTransactionState env of
     Just _ -> action
     Nothing -> withOracleConnection (const action)
+
+newtype OracleT m a = MkOracleT {unOracleT :: ReaderT OracleEnv m a}
+  deriving newtype
+    ( Functor
+    , Applicative
+    , Monad
+    , MIO.MonadIO
+    , MonadOracle
+    , MonadThrow
+    , MonadCatch
+    , MonadFail
+    , MonadUnliftIO
+    )
+
+instance Monad m => HasOracleContext (OracleT m) where
+  getOracleEnv = MkOracleT ask
+  localOracleEnv f = MkOracleT . local f . unOracleT
+
+runOracleT :: OracleEnv -> OracleT m a -> m a
+runOracleT env ma = runReaderT (unOracleT ma) env

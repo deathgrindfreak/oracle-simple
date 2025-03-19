@@ -156,8 +156,7 @@ getText = buildText <=< peek <=< dpiData_getBytes
         "UTF-16LE" -> pure TE.decodeUtf16LE
         otherEnc -> throwIO $ UnsupportedEncoding otherEnc
       evaluate (decodeFn gotBytes)
-        `catch` ( \(e :: SomeException) -> throwIO (ByteDecodeError encoding (displayException e))
-                )
+        `catch` (\(e :: SomeException) -> throwIO (ByteDecodeError encoding (displayException e)))
 
 -- | Get Text from the data buffer
 getString :: ReadDPIBuffer String

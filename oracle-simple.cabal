@@ -41,14 +41,17 @@ library
       Database.Oracle.Simple.Monad
       Database.Oracle.Simple.Pool
       Database.Oracle.Simple.Query
+      Database.Oracle.Simple.Timestamp
       Database.Oracle.Simple.ToField
       Database.Oracle.Simple.ToRow
       Database.Oracle.Simple.Transaction
+      Database.Oracle.Simple.Variable
       Paths_oracle_simple
   hs-source-dirs:
       src
   c-sources:
       cbits/dpiDataBuffer.c
+      cbits/dpiVar.c
       cbits/oracleHelpers.c
   extra-libraries:
       odpic
@@ -56,11 +59,13 @@ library
       aeson
     , base
     , bytestring
+    , containers
     , derive-storable
     , mtl
     , random
     , safe-exceptions
     , scientific
+    , semigroupoids
     , text
     , time
     , transformers
@@ -69,7 +74,7 @@ library
     , vector
   default-language: Haskell2010
   if flag(strict)
-    ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-uni-patterns -Wincomplete-record-updates -Wmissing-export-lists -Wno-implicit-prelude -Wno-safe -Wno-unsafe -Wnoncanonical-monad-instances -Wredundant-constraints -Wpartial-fields -Wmissed-specialisations -Wunused-packages -O2 -haddock -fplugin Henforcer
+    ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-uni-patterns -Wincomplete-record-updates -Wmissing-export-lists -Wno-implicit-prelude -Wno-safe -Wno-unsafe -Wnoncanonical-monad-instances -Wredundant-constraints -Wpartial-fields -Wunused-packages -O2 -haddock -fplugin Henforcer
     build-depends:
         henforcer
   else
@@ -97,7 +102,7 @@ executable functional-tests
       Paths_oracle_simple
   hs-source-dirs:
       test
-  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-uni-patterns -Wincomplete-record-updates -Wmissing-export-lists -Wno-implicit-prelude -Wno-safe -Wno-unsafe -Wnoncanonical-monad-instances -Wredundant-constraints -Wpartial-fields -Wmissed-specialisations -Wunused-packages -O2 -threaded -rtsopts -with-rtsopts=-N
+  ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-uni-patterns -Wincomplete-record-updates -Wmissing-export-lists -Wno-implicit-prelude -Wno-safe -Wno-unsafe -Wnoncanonical-monad-instances -Wredundant-constraints -Wpartial-fields -Wunused-packages -O2 -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
     , base
@@ -112,7 +117,33 @@ executable functional-tests
     , unliftio
   default-language: Haskell2010
   if flag(strict)
-    ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-uni-patterns -Wincomplete-record-updates -Wmissing-export-lists -Wno-implicit-prelude -Wno-safe -Wno-unsafe -Wnoncanonical-monad-instances -Wredundant-constraints -Wpartial-fields -Wmissed-specialisations -Wunused-packages -O2 -haddock -fplugin Henforcer
+    ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-uni-patterns -Wincomplete-record-updates -Wmissing-export-lists -Wno-implicit-prelude -Wno-safe -Wno-unsafe -Wnoncanonical-monad-instances -Wredundant-constraints -Wpartial-fields -Wunused-packages -O2 -haddock -fplugin Henforcer
+    build-depends:
+        henforcer
+  else
+    ghc-options: -O2 -haddock
+
+benchmark bench
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  other-modules:
+      Paths_oracle_simple
+  hs-source-dirs:
+      bench
+  default-extensions:
+      OverloadedStrings
+  ghc-options: -Wall -rtsopts -with-rtsopts=-A64m
+  build-depends:
+      base
+    , deepseq
+    , oracle-simple
+    , tasty-bench
+    , text
+    , time
+    , unliftio
+  default-language: Haskell2010
+  if flag(strict)
+    ghc-options: -Wall -Werror -Wcompat -Widentities -Wincomplete-uni-patterns -Wincomplete-record-updates -Wmissing-export-lists -Wno-implicit-prelude -Wno-safe -Wno-unsafe -Wnoncanonical-monad-instances -Wredundant-constraints -Wpartial-fields -Wunused-packages -O2 -haddock -fplugin Henforcer
     build-depends:
         henforcer
   else
