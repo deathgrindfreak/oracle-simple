@@ -1,7 +1,14 @@
 stages:
+  - test
   - build
   - create_images
   - run_functional_tests
+
+include:
+  ## Adds security scanning to test stage.
+  - project: 'heb-engineering/projects/gitlab-ci/templates'
+    ref: master
+    file: '/security/common.gitlab-ci.yml'
 
 ## This stanza specifies that the job should run in the following conditions:
 ## - If on a branch that is not the default branch and any of the listed files have changed,
