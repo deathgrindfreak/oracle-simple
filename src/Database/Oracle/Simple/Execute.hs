@@ -22,10 +22,10 @@ import Database.Oracle.Simple.Variable
 {- | Execute an INSERT, UPDATE, or other SQL query that is not expected to return results.
 Returns the number of rows affected.
 -}
-execute :: (ToRow a, MonadOracle m) => String -> a -> m Word64
+execute :: (ToRow a, MonadOracle m) => SqlStatement -> a -> m Word64
 execute sql param = do
   mode <- getExecutionMode
-  withLockedOracleConnection $ \conn -> MIO.liftIO $ do
+  withLockedOracleConnection sql $ \conn -> MIO.liftIO $ do
     stmt <- prepareStmt conn sql
     _ <- evalStateT (runRowWriter (toRow param) stmt) (Column 0)
     _ <- dpiExecute stmt mode
@@ -34,10 +34,10 @@ execute sql param = do
     pure count
 
 -- | A version of 'execute' that does not perform query substitution.
-execute_ :: MonadOracle m => String -> m Word64
+execute_ :: MonadOracle m => SqlStatement -> m Word64
 execute_ sql = do
   mode <- getExecutionMode
-  withLockedOracleConnection $ \conn -> MIO.liftIO $ do
+  withLockedOracleConnection sql $ \conn -> MIO.liftIO $ do
     stmt <- prepareStmt conn sql
     _ <- dpiExecute stmt mode
     count <- getRowCount stmt
@@ -48,7 +48,7 @@ execute_ sql = do
 Returns the number of rows affected. If the list of parameters is empty, the function will simply
 return 0 without issuing the query to the backend.
 -}
-executeMany :: (ToRow a, MonadOracle m) => String -> [a] -> m Word64
+executeMany :: (ToRow a, MonadOracle m) => SqlStatement -> [a] -> m Word64
 executeMany _ [] = pure 0
 executeMany sql params = do
   mode <- getExecutionMode
@@ -58,7 +58,7 @@ executeMany sql params = do
       _ <- dpiExecute stmt mode
       rowsAffected <- getRowCount stmt
       pure (totalRowsAffected + rowsAffected)
-  withLockedOracleConnection $ \conn -> MIO.liftIO $ do
+  withLockedOracleConnection sql $ \conn -> MIO.liftIO $ do
     stmt <- prepareStmt conn sql
     rs <- foldM (go stmt) 0 params
     closeStatement stmt
@@ -76,12 +76,12 @@ NOTE: This currently does not support arrays coming OUT, only IN.
 -}
 executeManyArray ::
   (ToBinding a, MonadOracle m) =>
-  String ->
+  SqlStatement ->
   NonEmpty a ->
   m Word64
 executeManyArray sql rows = do
   mode <- getExecutionMode
-  withLockedOracleConnection $ \conn -> MIO.liftIO $ do
+  withLockedOracleConnection sql $ \conn -> MIO.liftIO $ do
     stmt <- prepareStmt conn sql
     totalRows <- bindRows conn stmt rows
     _ <- dpiExecuteMany stmt mode totalRows

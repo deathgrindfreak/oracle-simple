@@ -23,6 +23,7 @@ module Database.Oracle.Simple.Monad
     isHealthy,
     OracleT (..),
     runOracleT,
+    addExecutionCallback,
   )
 where
 
@@ -32,7 +33,7 @@ import qualified Control.Monad.IO.Class as MIO
 import Control.Monad.Reader (ReaderT (..), ask, local, mapReaderT)
 import Control.Monad.Trans.Class (lift)
 import qualified Data.Typeable as Typeable
-import Database.Oracle.Simple.Internal (Connection)
+import Database.Oracle.Simple.Internal (Connection, SqlStatement)
 import qualified Database.Oracle.Simple.Internal as Internal
 import Database.Oracle.Simple.Pool (Pool, acquireConnection)
 import Numeric.Natural
@@ -70,7 +71,14 @@ data OracleEnv = OracleEnv
   { dbEnvPool :: Pool
   , dbConnectionState :: ConnectionState
   , dbTransactionState :: Maybe TransactionState
+  , dbExecutionCallback :: forall a. String -> IO a -> IO a
   }
+
+addExecutionCallback ::
+  (forall a. String -> IO a -> IO a) ->
+  OracleEnv ->
+  OracleEnv
+addExecutionCallback cb env = env {dbExecutionCallback = cb}
 
 withNewTransactionState :: MonadOracle m => (TransactionState -> m a) -> m a
 withNewTransactionState action = do
@@ -87,7 +95,7 @@ withNewTransactionState action = do
     (action nextTransactionState)
 
 newOracleEnv :: Pool -> OracleEnv
-newOracleEnv pool = OracleEnv pool NotConnected Nothing
+newOracleEnv pool = OracleEnv pool NotConnected Nothing (\_ io -> io)
 
 close :: MonadOracle m => ConnectionContext -> m ()
 close conn =
@@ -125,11 +133,13 @@ withSharedConnectionContext action = do
 withOracleConnection :: MonadOracle m => (Connection -> m a) -> m a
 withOracleConnection action = withSharedConnectionContext (action . ccConnection)
 
-withLockedOracleConnection :: MonadOracle m => (Connection -> m a) -> m a
-withLockedOracleConnection action =
+withLockedOracleConnection :: MonadOracle m => SqlStatement -> (Connection -> m a) -> m a
+withLockedOracleConnection sql action = do
+  executionCB <- dbExecutionCallback <$> getOracleEnv
   withSharedConnectionContext $ \connCtx ->
-    UnliftIO.withMVar (ccConnectionUtilizationLock connCtx) $ \() ->
-      action (ccConnection connCtx)
+    UnliftIO.withMVar (ccConnectionUtilizationLock connCtx) $ \() -> do
+      runInIO <- UnliftIO.askRunInIO
+      UnliftIO.liftIO $ executionCB sql (runInIO $ action (ccConnection connCtx))
 
 -- While we'll probably always want to run a block of queries inside of a `task` or `withTransaction` block
 -- We can change the execution mode to commit on a success when we're writing statements outside of said blocks

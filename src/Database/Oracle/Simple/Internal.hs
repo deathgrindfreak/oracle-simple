@@ -12,7 +12,8 @@
 {- HLINT ignore "Avoid restricted function" -}
 
 module Database.Oracle.Simple.Internal
-  ( DPINativeType (..),
+  ( SqlStatement,
+    DPINativeType (..),
     DPIData (..),
     DPIBytes (..),
     DPIStmt (..),
@@ -103,6 +104,8 @@ import GHC.TypeLits (Natural)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Database.Oracle.Simple.Timestamp
+
+type SqlStatement = String
 
 newtype DPIStmt = DPIStmt (Ptr DPIStmt)
   deriving (Show, Eq)
@@ -728,7 +731,7 @@ foreign import ccall "dpiConn_prepareStmt"
 prepareStmt ::
   Connection ->
   -- | sql
-  String ->
+  SqlStatement ->
   IO DPIStmt
 prepareStmt (Connection fptr) sql = do
   withForeignPtr fptr $ \conn -> do
