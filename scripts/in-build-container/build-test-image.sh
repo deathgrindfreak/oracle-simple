@@ -29,7 +29,8 @@ fi
 
 cp ./.stack-work/dist/functional-tests ./containers/oracle-buildpack/.
 
-docker build \
+docker build --pull \
+  --platform linux/amd64 \
   -t "${NAME}:${TAG}" \
   --build-arg ORACLE_VERSION="23.4.0.24.05" \
   -f ./containers/oracle-buildpack/Dockerfile \

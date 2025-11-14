@@ -16,7 +16,12 @@ import Foreign.Marshal.Utils (fromBool)
 import Numeric.Natural (Natural)
 
 import Database.Oracle.Simple.Internal
-import Database.Oracle.Simple.Timestamp (utcTimeToDPITimestamp)
+  ( DPINativeType (..),
+    DPITimestamp,
+    WriteBuffer (..),
+    mkDPIBytesUTF8,
+    utcTimeToDPITimestamp,
+  )
 
 class ToField a where
   toDPINativeType :: Proxy a -> DPINativeType

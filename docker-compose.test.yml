@@ -14,9 +14,10 @@ services:
       - test-oracle-simple
 
   functional-tests:
+    platform: linux/amd64
     stdin_open: true
     tty: true
-    image: functional-tests:latest
+    image: functional-test-oracle-simple:latest
     environment:
       LD_LIBRARY_PATH: "/opt/oracle/instantclient_23_4"
     networks:

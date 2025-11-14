@@ -8,6 +8,11 @@
 
 module Database.Oracle.Simple.Monad
   ( OracleEnv,
+    dbEnvPool,
+    dbConnectionState,
+    dbTransactionState,
+    dbExecutionCallback,
+    resetOracleEnv,
     newOracleEnv,
     withOracleConnection,
     withLockedOracleConnection,
@@ -33,12 +38,13 @@ import qualified Control.Monad.IO.Class as MIO
 import Control.Monad.Reader (ReaderT (..), ask, local, mapReaderT)
 import Control.Monad.Trans.Class (lift)
 import qualified Data.Typeable as Typeable
-import Database.Oracle.Simple.Internal (Connection, SqlStatement)
-import qualified Database.Oracle.Simple.Internal as Internal
-import Database.Oracle.Simple.Pool (Pool, acquireConnection)
 import Numeric.Natural
 import UnliftIO (MonadUnliftIO)
 import qualified UnliftIO
+
+import Database.Oracle.Simple.Internal (Connection, SqlStatement)
+import qualified Database.Oracle.Simple.Internal as Internal
+import Database.Oracle.Simple.Pool (Pool, acquireConnection)
 
 data ConnectionState
   = NotConnected
@@ -73,6 +79,9 @@ data OracleEnv = OracleEnv
   , dbTransactionState :: Maybe TransactionState
   , dbExecutionCallback :: forall a. String -> IO a -> IO a
   }
+
+resetOracleEnv :: OracleEnv -> OracleEnv
+resetOracleEnv = newOracleEnv . dbEnvPool
 
 addExecutionCallback ::
   (forall a. String -> IO a -> IO a) ->
@@ -138,8 +147,8 @@ withLockedOracleConnection sql action = do
   executionCB <- dbExecutionCallback <$> getOracleEnv
   withSharedConnectionContext $ \connCtx ->
     UnliftIO.withMVar (ccConnectionUtilizationLock connCtx) $ \() -> do
-      runInIO <- UnliftIO.askRunInIO
-      UnliftIO.liftIO $ executionCB sql (runInIO $ action (ccConnection connCtx))
+      UnliftIO.withRunInIO $ \runInIO ->
+        UnliftIO.liftIO $ executionCB sql (runInIO $ action (ccConnection connCtx))
 
 -- While we'll probably always want to run a block of queries inside of a `task` or `withTransaction` block
 -- We can change the execution mode to commit on a success when we're writing statements outside of said blocks

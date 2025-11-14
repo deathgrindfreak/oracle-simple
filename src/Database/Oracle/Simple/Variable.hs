@@ -47,16 +47,31 @@ import Data.Semigroup.Foldable (foldMap1) -- TODO Can switch to Data.Foldable on
 import qualified Data.Text as T
 import qualified Data.Text.Foreign as TF
 import qualified Data.Time as Time
-import Foreign.ForeignPtr
-import Foreign.Ptr (nullPtr)
-import GHC.Generics
-import GHC.TypeLits
+import Foreign.ForeignPtr (ForeignPtr)
+import Foreign.Ptr (Ptr, nullPtr)
+import GHC.Generics (C1, D1, Generic, Generically (..), K1 (..), M1 (..), Rep (..), S1, U1, (:*:) (..), (:+:) (..))
+import GHC.TypeLits (ErrorMessage (..), TypeError)
 import UnliftIO (MonadUnliftIO)
 import qualified UnliftIO.Foreign as UIO
 import qualified UnliftIO.IORef as IORef
 
 import Database.Oracle.Simple.Internal
-import Database.Oracle.Simple.Timestamp (utcTimeToDPITimestamp)
+  ( Connection,
+    DPINativeType (..),
+    DPIOracleType (..),
+    DPIStmt,
+    DPITimestamp (..),
+    ODPICData,
+    ODPICVar,
+    Only (..),
+    dpiConn_newVar,
+    dpiStmt_bindByPos,
+    dpiVar_release,
+    dpiVar_setFromBytes,
+    throwOracleError,
+    toCUInt,
+    utcTimeToDPITimestamp,
+  )
 
 {- | Determines how to transfer the Haskell type to the Oracle database.
 These instances should be treated as base conversions, special cases will require
@@ -202,7 +217,7 @@ newVar ::
   Int ->
   Int ->
   m Variable
-newVar (Connection fconn) otyp ntyp maxArraySize size = do
+newVar fconn otyp ntyp maxArraySize size = do
   -- Extract actual pointers after ODPI-C allocates them
   (varPtr, bufPtr) <- UIO.withForeignPtr fconn $ \connPtr ->
     UIO.alloca $ \vPtrOut ->
@@ -210,8 +225,8 @@ newVar (Connection fconn) otyp ntyp maxArraySize size = do
         throwOracleError
           =<< dpiConn_newVar
             connPtr
-            (dpiOracleTypeToUInt otyp)
-            (dpiNativeTypeToUInt ntyp)
+            (toCUInt otyp)
+            (toCUInt ntyp)
             (fromIntegral maxArraySize)
             (fromIntegral size)
             True
@@ -397,7 +412,7 @@ bindRows ::
   , MonadUnliftIO m
   ) =>
   Connection ->
-  DPIStmt ->
+  Ptr DPIStmt ->
   NonEmpty a ->
   m Int
 bindRows conn stmt rows = do

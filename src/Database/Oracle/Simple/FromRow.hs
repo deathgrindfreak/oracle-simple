@@ -20,11 +20,12 @@ import Control.Monad.State.Strict (StateT, evalStateT, get, modify)
 import Data.Functor.Identity (Identity)
 import Data.Proxy (Proxy (..))
 import Data.Word (Word32)
+import Foreign.Ptr (Ptr)
 import GHC.Generics
 import GHC.TypeLits
 
-import Database.Oracle.Simple.FromField
-import Database.Oracle.Simple.Internal
+import Database.Oracle.Simple.FromField (FieldParser (..), FromField (..))
+import Database.Oracle.Simple.Internal (Column (..), DPINativeType, DPIStmt, Only (..), getQueryValue)
 
 class FromRow a where
   fromRow :: RowParser a
@@ -92,7 +93,7 @@ instance (() ~ TypeError ('Text "Sum types not supported")) => GFromRow (l :+: r
 instance (FromField a) => GFromRow (K1 i a) where
   gFromRow = K1 <$> readField
 
-newtype RowParser a = RowParser {runRowParser :: DPIStmt -> StateT Word32 IO a}
+newtype RowParser a = RowParser {runRowParser :: Ptr DPIStmt -> StateT Word32 IO a}
 
 instance Functor RowParser where
   fmap f g = RowParser $ fmap f . runRowParser g
@@ -110,7 +111,7 @@ instance Monad RowParser where
     runRowParser (g f') dpiStmt
 
 -- | Retrieve the currently fetched row.
-getRow :: forall a. (FromRow a) => DPIStmt -> IO a
+getRow :: forall a. (FromRow a) => Ptr DPIStmt -> IO a
 getRow stmt = evalStateT (runRowParser fromRow stmt) 0
 
 -- | Derive a @RowParser@ for a field at the specified column position.

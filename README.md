@@ -57,6 +57,53 @@ data ReturnedRow = ReturnedRow
 
 ```
 
+## Subscriptions
+CQN (Continuous Query Notifications) are supported.  The following code shows how to set up subscriptions with a callback:
+
+``` haskell
+subscribe = runOracle $ do
+  let
+    cb msg = do
+      MIO.liftIO $ putStrLn "!!!RECEIVED MESSAGE!!!"
+      MIO.liftIO $ print msg
+
+    opts =
+      Just 
+        OS.SubscriptionCreateOptions
+          { OS.operations = OS.AllNotifications
+          , OS.qos = Set.fromList [OS.QOSQuery, OS.QOSRowIds]
+          }
+
+  MIO.liftIO $ print "Subscribing ..."
+  OS.withSubscription opts cb $ do
+    MIO.liftIO $ print "Registering ..."
+    OS.register "SELECT * FROM test_table"
+
+  forever $ do
+    MIO.liftIO $ print "sleeping ..."
+    UnliftIO.threadDelay $ 5 * 1000 * 1000
+    
+runQueries = runOracle $ do
+  void $ OS.execute_ "create table if not exists test_table (num_column number(10,0) primary key)"
+
+  void $ OS.execute_ "delete from test_table"
+  for_ [1 .. 10] $ \i -> do
+    void $ OS.execute "insert into test_table values (:1)" (OS.Only @Int i)
+
+  rs <- coerce @[OS.Only Int] @[Int] <$> OS.query_ "select * from test_table"
+  MIO.liftIO $ print rs
+```
+
+Running `subscribe` first and then `runQueries` in another repl (while having an Oracle database running) will produce something like the following: 
+
+``` text
+!!!RECEIVED MESSAGE!!!
+SubscriberMessage {eventType = EventQueryChange, dbName = "ORACLEDB", tables = [], queries = [SubscriptionMessageQuery {queryID = 2, queryOperations = Notifications (fromList [AllRowsNotification,InsertNotification,UpdateNotification]), queryTables = [SubscriptionMessageTable {tableOperations = Notifications (fromList [DeleteNotification]), tableName = "EMD.TEST_TABLE", tableRows = [SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAA"},SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAB"},SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAC"},SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAD"},SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAE"},SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAF"},SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAG"},SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAH"},SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAK"},SubscriptionMessageRow {rowOperations = Notifications (fromList [DeleteNotification]), rowId = "AAARx/AAcAAAAALAAL"}]}]}], errorInfo = Nothing, registered = True, queueName = "", consumerName = ""}
+!!!RECEIVED MESSAGE!!!
+SubscriberMessage {eventType = EventQueryChange, dbName = "ORACLEDB", tables = [], queries = [SubscriptionMessageQuery {queryID = 2, queryOperations = Notifications (fromList [AllRowsNotification,InsertNotification,UpdateNotification]), queryTables = [SubscriptionMessageTable {tableOperations = Notifications (fromList [InsertNotification]), tableName = "EMD.TEST_TABLE", tableRows = [SubscriptionMessageRow {rowOperations = Notifications (fromList [InsertNotification]), rowId = "AAARx/AAcAAAAALAAI"}]}]}], errorInfo = Nothing, registered = True, queueName = "", consumerName = ""}
+...
+```
+
 ## Developing locally
 
 ### Building

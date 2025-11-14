@@ -1,4 +1,3 @@
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Database.Oracle.Simple.Pool
@@ -24,24 +23,23 @@ import Foreign
     peek,
     withForeignPtr,
   )
-import Foreign.C (CInt (CInt), CString, CUInt (CUInt), withCString, withCStringLen)
+import Foreign.C (CInt (CInt), CString, CUInt (CUInt), withCStringLen)
 import Foreign.Storable (poke)
 
 import Database.Oracle.Simple.Internal
-  ( CommonCreateParams (..),
-    Connection (Connection),
+  ( Connection,
     ConnectionParams (..),
     DPICommonCreateParams (..),
-    DPIConn (DPIConn),
-    DPIContext (DPIContext),
-    DPIPool (DPIPool),
+    DPIConn,
+    DPIContext,
+    DPIPool,
     DPIPoolCreateParams (..),
     PoolCreateParams (..),
     dpiConn_close_finalizer,
     dpiConn_release_finalizer,
     globalContext,
     throwOracleError,
-    withDefaultCommonCreateParams,
+    withCommonCreateParams,
     withDefaultPoolCreateParams,
   )
 
@@ -55,7 +53,7 @@ createPool ::
   IO Pool
 createPool params = do
   ctx <- readIORef globalContext
-  DPIPool poolPtr <- alloca $ \connPtr -> do
+  poolPtr <- alloca $ \connPtr -> do
     withCStringLen (user params) $ \(userCString, fromIntegral -> userLen) ->
       withCStringLen (pass params) $ \(passCString, fromIntegral -> passLen) ->
         withCStringLen (connString params) $ \(connCString, fromIntegral -> connLen) ->
@@ -80,36 +78,6 @@ createPool params = do
   addForeignPtrFinalizer dpiPool_release_finalizer fptr
   addForeignPtrFinalizer dpiPool_close_finalizer fptr
   pure (Pool fptr)
-
-withCommonCreateParams ::
-  Maybe CommonCreateParams ->
-  (Ptr DPICommonCreateParams -> IO a) ->
-  IO a
-withCommonCreateParams mbCommonCreateParams f =
-  case mbCommonCreateParams of
-    Nothing -> f nullPtr
-    Just CommonCreateParams {..} ->
-      withDefaultCommonCreateParams $ \defaultCommonCreateParamsPtr -> do
-        defaultCommonCreateParams <- peek defaultCommonCreateParamsPtr
-
-        withCString encoding $ \encodingCString ->
-          withCString nencoding $ \nencodingCString ->
-            withCStringLen edition $ \(editionCString, fromIntegral -> editionLen) ->
-              withCStringLen driverName $ \(driverNameCString, fromIntegral -> driverNameLen) ->
-                poke
-                  defaultCommonCreateParamsPtr
-                  defaultCommonCreateParams
-                    { dpi_createMode = createMode
-                    , dpi_encoding = encodingCString
-                    , dpi_nencoding = nencodingCString
-                    , dpi_edition = editionCString
-                    , dpi_editionLength = editionLen
-                    , dpi_driverName = driverNameCString
-                    , dpi_driverNameLength = driverNameLen
-                    , dpi_sodaMetadataCache = sodaMetadataCache
-                    , dpi_stmtCacheSize = fromIntegral stmtCacheSize
-                    }
-        f defaultCommonCreateParamsPtr
 
 withCreatePoolParams ::
   Maybe PoolCreateParams ->
@@ -142,7 +110,7 @@ withCreatePoolParams mbCreateConnectionParams f =
 foreign import ccall unsafe "dpiPool_create"
   dpiPool_create ::
     -- | const dpiContext *context
-    DPIContext ->
+    Ptr DPIContext ->
     -- | const char *userName
     CString ->
     -- | uint32_t userNameLength
@@ -160,7 +128,7 @@ foreign import ccall unsafe "dpiPool_create"
     -- | const dpiPoolCreateParams *createParams
     Ptr DPIPoolCreateParams ->
     -- | dpiPool **pool
-    Ptr DPIPool ->
+    Ptr (Ptr DPIPool) ->
     IO CInt
 
 foreign import ccall "&close_pool_default"
@@ -180,19 +148,19 @@ withPool params = bracket (createPool params) closePool
 -- | Acquire a connection from a session pool.
 acquireConnection :: Pool -> IO Connection
 acquireConnection (Pool poolFptr) = do
-  (DPIConn connPtr) <- withForeignPtr poolFptr $ \pool -> do
+  connPtr <- withForeignPtr poolFptr $ \pool -> do
     alloca $ \conn -> do
       throwOracleError =<< acquire_connection pool conn
       peek conn
   fptr <- newForeignPtr_ connPtr
   addForeignPtrFinalizer dpiConn_release_finalizer fptr
   addForeignPtrFinalizer dpiConn_close_finalizer fptr
-  pure (Connection fptr)
+  pure fptr
 
 foreign import ccall unsafe "acquire_connection"
   acquire_connection ::
     -- | dpiPool *pool
     Ptr DPIPool ->
     -- | dpiConn **conn
-    Ptr DPIConn ->
+    Ptr (Ptr DPIConn) ->
     IO CInt

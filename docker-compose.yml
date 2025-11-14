@@ -1,6 +1,7 @@
 version: "3"
 services:
   oracle-simple-dev:
+    platform: linux/amd64
     stdin_open: true
     tty: true
     image: registry.gitlab.com/heb-engineering/teams/enterprise/sco/spur/supplier-buildpack/oracle:c6b2594fe2a2e47477c252189dff3c4df7b3c7d4
@@ -14,6 +15,7 @@ services:
       - stack-work:/$PROJECT_DIR/.stack-work
 
   gke-tools:
+    platform: linux/amd64
     stdin_open: true
     tty: true
     image: registry.gitlab.com/heb-engineering/teams/enterprise/sco/spur/supplier-buildpack/spur-gke-tools/helm3:be04d1ce06dc6b655c18e9b2dbbcc3227e440101
@@ -27,6 +29,7 @@ services:
       - stack-work:/$PROJECT_DIR/.stack-work
 
   oracle-haskell-dev:
+    platform: linux/amd64
     stdin_open: true
     tty: true
     build:
@@ -43,9 +46,27 @@ services:
       - $DOCKER_SOCKET_PATH:/var/run/docker.sock
       - stack:/root/.stack
       - stack-work:/$PROJECT_DIR/.stack-work
+    networks:
+      - oracle-simple
+
+  oracle-db:
+    container_name: oracledb
+    build: containers/oracle-db
+    environment:
+      ORACLE_DATABASE: oracledb
+      ORACLE_PASSWORD: password
+    ports:
+      - 1521:1521
+    networks:
+      - oracle-simple
 
 volumes:
   stack:
-    name: stack
+    name: oracle-simple-stack
     external: true
   stack-work:
+    name: oracle-simple-stack-work
+    external: true
+
+networks:
+  oracle-simple:

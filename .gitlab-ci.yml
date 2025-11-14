@@ -75,11 +75,11 @@ Create Test Image:
     - "Build Executables"
   artifacts:
     paths:
-      - functional-tests.tar.gz
+      - functional-test-oracle-simple.tar.gz
     expire_in: 1 hour
   script:
-    - ./scripts/in-build-container/build-test-image.sh functional-tests ${CI_COMMIT_SHA} "${CI_REGISTRY_IMAGE}"
-    - docker save functional-tests:${CI_COMMIT_SHA} | gzip > functional-tests.tar.gz
+    - ./scripts/in-build-container/build-test-image.sh functional-test-oracle-simple ${CI_COMMIT_SHA} "${CI_REGISTRY_IMAGE}"
+    - docker save functional-test-oracle-simple:${CI_COMMIT_SHA} | gzip > functional-test-oracle-simple.tar.gz
   <<: *only-on
 
 Functional Tests:
@@ -91,7 +91,7 @@ Functional Tests:
     - "Create Test Image"
   script:
     - docker ps # print what is running so we can see if something fishy is going on
-    - docker load -i functional-tests.tar.gz
-    - docker tag functional-tests:${CI_COMMIT_SHA} functional-tests:latest
+    - docker load -i functional-test-oracle-simple.tar.gz
+    - docker tag functional-test-oracle-simple:${CI_COMMIT_SHA} functional-test-oracle-simple:latest
     - ./scripts/run_tests.sh
   <<: *only-on

@@ -20,13 +20,23 @@ import Control.Monad.IO.Class (liftIO)
 import Control.Monad.State.Strict (StateT, get, modify)
 import Data.Functor.Identity (Identity)
 import Data.Proxy (Proxy (..))
-import GHC.Generics
-import GHC.TypeLits
+import Foreign (free)
+import Foreign.Ptr (Ptr)
+import GHC.Generics (C1, D1, Generic, K1 (..), M1 (..), Rep (..), S1, (:*:) (..), (:+:) (..))
+import GHC.TypeLits (ErrorMessage (..), TypeError)
 
 import Database.Oracle.Simple.Internal
-import Database.Oracle.Simple.ToField
+  ( Column (..),
+    DPIBytes (..),
+    DPIData (..),
+    DPIStmt,
+    Only (..),
+    WriteBuffer (..),
+    bindValueByPos,
+  )
+import Database.Oracle.Simple.ToField (ToField (..))
 
-newtype RowWriter a = RowWriter {runRowWriter :: DPIStmt -> StateT Column IO a}
+newtype RowWriter a = RowWriter {runRowWriter :: Ptr DPIStmt -> StateT Column IO a}
 
 instance Functor RowWriter where
   fmap f g = RowWriter $ fmap f . runRowWriter g
@@ -107,3 +117,11 @@ writeField field = RowWriter $ \stmt -> do
           _ -> 0
     bindValueByPos stmt col (toDPINativeType (Proxy @a)) (DPIData {..})
     freeWriteBuffer dataValue -- no longer needed as dpiStmt_bindValueByPos creates a memory-managed dpiVar
+
+{- | Free all pointers in the WriteBuffer.
+Call only after the contents of the buffer (specifically, any pointers) are no longer needed.
+-}
+freeWriteBuffer :: WriteBuffer -> IO ()
+freeWriteBuffer (AsString cString) = free cString
+freeWriteBuffer (AsBytes DPIBytes {..}) = free dpiBytesPtr >> free dpiBytesEncoding
+freeWriteBuffer _ = pure ()

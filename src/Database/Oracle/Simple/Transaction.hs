@@ -27,7 +27,7 @@ import System.Random (getStdRandom, uniformR)
 
 import Database.Oracle.Simple.Execute (execute_)
 import Database.Oracle.Simple.Internal
-  ( Connection (Connection),
+  ( Connection,
     DPIConn,
     OracleError,
     throwOracleError,
@@ -74,7 +74,7 @@ data Transaction = Transaction
 
 -- | Begin a new transaction.
 beginTransaction :: Connection -> IO Transaction
-beginTransaction (Connection fptr) =
+beginTransaction fptr =
   withForeignPtr fptr $ \conn -> do
     transactionId <- nextRandom
     branchQualifier <- nextRandom
@@ -97,7 +97,7 @@ Attempting a commit if this function returns False may cause an exception.
 Use 'commitIfNeeded' to safely commit a transaction.
 -}
 prepareCommit :: Connection -> Transaction -> IO Bool
-prepareCommit (Connection fptr) dpiTransaction =
+prepareCommit fptr dpiTransaction =
   withForeignPtr fptr $ \conn ->
     withDPIXid dpiTransaction $ \dpiXid ->
       alloca $ \commitNeededPtr -> do
@@ -116,7 +116,7 @@ Throws an exception if a commit was not necessary.
 Whether a commit is necessary can be checked by 'prepareCommit'.
 -}
 commitTransaction :: Connection -> Transaction -> IO ()
-commitTransaction (Connection fptr) dpiTransaction =
+commitTransaction fptr dpiTransaction =
   withForeignPtr fptr $ \conn ->
     withDPIXid dpiTransaction $ \dpiXid ->
       throwOracleError =<< dpiConn_tpcCommit conn dpiXid 0
@@ -130,7 +130,7 @@ foreign import ccall unsafe "dpiConn_tpcCommit"
 
 -- | Roll back a transaction.
 rollbackTransaction :: Connection -> Transaction -> IO ()
-rollbackTransaction (Connection fptr) dpiTransaction =
+rollbackTransaction fptr dpiTransaction =
   withForeignPtr fptr $ \conn ->
     withDPIXid dpiTransaction $
       throwOracleError <=< dpiConn_tpcRollback conn

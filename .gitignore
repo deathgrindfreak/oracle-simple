@@ -19,4 +19,4 @@ TAGS
 containers/oracle-buildpack/functional-tests
 
 # Scratch pad file
-Scratch.hs
+Scratch*.hs

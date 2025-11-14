@@ -10,7 +10,7 @@ where
 import Control.Concurrent (threadDelay)
 import Control.Exception.Safe (MonadCatch, MonadThrow)
 import qualified Control.Exception.Safe as Exc
-import Control.Monad (unless)
+import Control.Monad (unless, when)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.Trans.Reader (ReaderT (..), ask, local)
 import qualified Data.Maybe as Maybe
@@ -51,8 +51,8 @@ runWait :: ConnectionParams -> WaitM a -> IO a
 runWait dbParams waitM =
   withPool dbParams $ runReaderT (runWaitM waitM) . newOracleEnv
 
-waitForOracle :: ConnectionParams -> Int -> Int -> IO ()
-waitForOracle dbParams timeoutSeconds sleepSeconds = do
+waitForOracle :: Bool -> ConnectionParams -> Int -> Int -> IO ()
+waitForOracle debuggingMode dbParams timeoutSeconds sleepSeconds = do
   putStrLn $ "wait-for-oracle: Waiting " <> show timeoutSeconds <> "s for Oracle DB to start ..."
 
   didTimeout <- Timeout.timeout (toMicroSeconds timeoutSeconds) $ do
@@ -71,7 +71,9 @@ waitForOracle dbParams timeoutSeconds sleepSeconds = do
               else do
                 threadDelay (toMicroSeconds sleepSeconds)
                 wait
-          Left _ -> do
+          Left err -> do
+            when debuggingMode $ do
+              putStrLn $ "wait-for-oracle (DEBUG): Failed to connect: " <> show err
             threadDelay (toMicroSeconds sleepSeconds)
             wait
     wait

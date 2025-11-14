@@ -11,8 +11,15 @@ else
   echo "DOCKER_SOCKET_PATH=$socket_path" >> .env
 fi
 
-if docker volume inspect stack -f "stack volume exists"; then
+if docker volume inspect stack -f "oracle-simple-stack volume exists"; then
   echo "skipping volume creation"
 else
-  docker volume create stack
+  docker volume create oracle-simple-stack
+fi
+
+
+if docker volume inspect stack -f "oracle-simple-stack-work volume exists"; then
+  echo "skipping volume creation"
+else
+  docker volume create oracle-simple-stack-work
 fi

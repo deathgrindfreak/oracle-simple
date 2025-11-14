@@ -71,7 +71,7 @@ data InsertTest = MkInsertTest
 main :: IO ()
 main = do
   ps <- params
-  waitForOracle ps (2 * 60) 5
+  waitForOracle False ps (2 * 60) 5
   withPool ps $ hspec . spec
 
 params :: IO ConnectionParams
@@ -176,6 +176,20 @@ spec pool = do
       void $ Exc.tryAny $ execute_ "drop table test"
       pure $
         results `shouldBe` [test, test2, test3]
+
+  describe "DPIOpCode" $ do
+    it "Should convert DPIOpCode to SubscriptionOperationNotifications and back" $
+      hedgehog $ do
+        let
+          genSubscriptionOperationNotifications :: HH.Gen SubscriptionOperationNotifications
+          genSubscriptionOperationNotifications = do
+            let
+              s = length ([minBound .. maxBound] :: [SubscriptionOperationNotification])
+            sets <- Gen.set (Range.linear 0 s) Gen.enumBounded
+            pure $ if null sets then AllNotifications else Notifications sets
+
+        n <- HH.forAll $ genSubscriptionOperationNotifications
+        HH.tripping @_ @(Either String) n subscriptionOperationNotificationsToFlags (Right . fromOpCodes)
 
   describe "DPITimeStamp tests" $ do
     it "Should roundtrip DPITimestamp through UTCTime" $ \_ -> do

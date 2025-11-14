@@ -37,11 +37,20 @@ library
       Database.Oracle.Simple.FromField
       Database.Oracle.Simple.FromRow
       Database.Oracle.Simple.Internal
+      Database.Oracle.Simple.Internal.Connection
+      Database.Oracle.Simple.Internal.Context
+      Database.Oracle.Simple.Internal.Data
+      Database.Oracle.Simple.Internal.DPIEnum
+      Database.Oracle.Simple.Internal.Entity
+      Database.Oracle.Simple.Internal.Statement
+      Database.Oracle.Simple.Internal.Subscription
+      Database.Oracle.Simple.Internal.Timestamp
+      Database.Oracle.Simple.Internal.Variable
       Database.Oracle.Simple.JSON
       Database.Oracle.Simple.Monad
       Database.Oracle.Simple.Pool
       Database.Oracle.Simple.Query
-      Database.Oracle.Simple.Timestamp
+      Database.Oracle.Simple.Subscribe
       Database.Oracle.Simple.ToField
       Database.Oracle.Simple.ToRow
       Database.Oracle.Simple.Transaction
@@ -61,6 +70,7 @@ library
     , bytestring
     , containers
     , derive-storable
+    , ip
     , mtl
     , random
     , safe-exceptions

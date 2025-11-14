@@ -6,11 +6,12 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module Database.Oracle.Simple.Timestamp
+module Database.Oracle.Simple.Internal.Timestamp
   ( DPITimestamp (..),
     dpiTimeStampToUTCDPITimeStamp,
     utcTimeToDPITimestamp,
-  ) where
+  )
+where
 
 import Data.Int (Int16, Int8)
 import Data.Time
